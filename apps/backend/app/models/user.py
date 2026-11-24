@@ -1,7 +1,7 @@
 from datetime import datetime
 from sqlalchemy import String, DateTime, func, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 import uuid
 
 from app.db.session import Base
@@ -90,7 +90,7 @@ class UserPreferences(Base):
     default_country: Mapped[str] = mapped_column(String(10), default="US", nullable=False)
     default_platform: Mapped[str] = mapped_column(String(50), default="youtube", nullable=False)
     theme: Mapped[str] = mapped_column(String(20), default="dark", nullable=False)
-    notifications: Mapped[dict] = mapped_column(default=dict, nullable=False)
+    notifications: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

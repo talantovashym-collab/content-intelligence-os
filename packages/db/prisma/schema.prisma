@@ -180,28 +180,29 @@ model UserPreferences {
 }
 
 model Project {
-  id              String        @id @default(cuid())
-  userId          String
-  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title           String
-  description     String?
-  stage           ProjectStage  @default(IDEA)
-  niche           String?
-  targetAudience  String?
-  language        String        @default("en")
-  country         String        @default("US")
-  platforms       Platform[]
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  opportunities   Opportunity[]
-  references      Reference[]
-  investigations  Investigation[]
-  strategies      CreativeStrategy[]
-  productions     Production[]
-  tests           Test[]
-  publications    Publication[]
-  analytics       Analytics[]
-  knowledgeEntries KnowledgeEntry[]
+  id                     String        @id @default(cuid())
+  userId                 String
+  user                   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title                  String
+  description            String?
+  stage                  ProjectStage  @default(IDEA)
+  niche                  String?
+  targetAudience         String?
+  language               String        @default("en")
+  country                String        @default("US")
+  platforms              Platform[]
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+  opportunities          Opportunity[]
+  references             Reference[]
+  investigations         Investigation[]
+  strategies             CreativeStrategy[]
+  productions            Production[]
+  tests                  Test[]
+  publications           Publication[]
+  analytics              Analytics[]
+  knowledgeEntries       KnowledgeEntry[]
+  multiReferenceAnalyses MultiReferenceAnalysis[]
 }
 
 model Opportunity {
