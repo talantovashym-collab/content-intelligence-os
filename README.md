@@ -213,14 +213,21 @@ API key for **any one** provider in `.env` and restart the backend
 |----------|----------|---------------|
 | OpenAI | `OPENAI_API_KEY` | gpt-4o-mini |
 | Anthropic | `ANTHROPIC_API_KEY` | claude-sonnet-5-5 |
-| Google Gemini | `GEMINI_API_KEY` | gemini-2.5-flash |
-| Mistral | `MISTRAL_API_KEY` | mistral-large-latest |
-| Groq | `GROQ_API_KEY` | llama-3.3-70b-versatile |
-| DeepSeek | `DEEPSEEK_API_KEY` | deepseek-chat |
+| Google Gemini | `GEMINI_API_KEY` | gemini-flash-latest |
+| Mistral | `MISTRAL_API_KEY` | mistral-medium-latest |
+| Groq | `GROQ_API_KEY` | openai/gpt-oss-120b |
+| DeepSeek | `DEEPSEEK_API_KEY` | deepseek-flash |
 | OpenRouter | `OPENROUTER_API_KEY` | openrouter/auto |
+| NVIDIA NIM | `NVIDIA_API_KEY` | nvidia/nemotron-3.5-lightning-30b-a3b |
+| Vercel AI Gateway | `AI_GATEWAY_API_KEY` | openai/gpt-4o-mini |
+| TeamoRouter | `TEAMOROUTER_API_KEY` | deepseek-v4-flash |
+| Token Harbor | `TOKENHARBOR_API_KEY` | deepseek-v4-flash:free |
 | Ollama (local) | `OLLAMA_BASE_URL` | llama3.1 |
 
-`LLM_MODEL` overrides the model, `LLM_PROVIDER` picks one when several keys are set.
+`LLM_MODEL` overrides the model, `LLM_PROVIDER` picks which one goes first when several keys are
+set. If a provider fails (out of credit, overloaded, bad key) the request moves on to the next
+configured provider, and the failed one is skipped for 5 minutes. `LLM_FALLBACK_ORDER`
+(e.g. `gemini,openrouter,nvidia`) limits and orders the fallbacks; `LLM_FALLBACK=false` turns them off.
 Settings → AI provider shows which one is active and has a **Test connection** button.
 Without any key every module still works and produces template output built from the
 real data (search results, transcripts, stats).

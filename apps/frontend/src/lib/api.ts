@@ -432,7 +432,9 @@ export interface AIStatus {
   active_label: string | null;
   model: string | null;
   requested_provider: string | null;
-  providers: { name: string; label: string; configured: boolean; env: string }[];
+  fallback: boolean;
+  fallback_order: string[];
+  providers: { name: string; label: string; configured: boolean; env: string; cooling_down: boolean }[];
 }
 
 const P = (projectId: string) => `/projects/${projectId}`;

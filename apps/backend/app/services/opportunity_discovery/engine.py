@@ -103,8 +103,7 @@ class OpportunityDiscoveryEngine:
         try:
             raw = await self._generate_with_ai(niche, audience, request, videos, market, count, wanted_formats)
             used_ai = True
-            active = llm.active_provider()
-            provider = active.label if active else None
+            provider = llm.used_provider_label()
         except llm.LLMUnavailable:
             raw = self._generate_from_template(niche, audience, videos, market, count, wanted_formats)
             warnings.append("No AI provider configured: opportunities are templates built from the search results.")
@@ -183,7 +182,7 @@ class OpportunityDiscoveryEngine:
         used_ai, provider = False, None
         try:
             item = await llm.complete_json(SYSTEM_PROMPT, "\n".join(lines), max_tokens=3000)
-            used_ai, provider = True, (llm.active_provider().label if llm.active_provider() else None)
+            used_ai, provider = True, llm.used_provider_label()
         except Exception as e:
             if not isinstance(e, llm.LLMUnavailable):
                 warnings.append(f"AI validation failed, showing market data only ({e}).")

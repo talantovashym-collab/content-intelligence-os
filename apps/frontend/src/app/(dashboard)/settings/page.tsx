@@ -51,12 +51,18 @@ function AiProviderCard() {
               {s.requested_provider && !s.active_label && (
                 <span className="block text-amber-700">LLM_PROVIDER is set to “{s.requested_provider}” but that provider has no key.</span>
               )}
+              {s.fallback && s.fallback_order.length > 0 && (
+                <span className="block text-muted-foreground">
+                  If it fails (no credit, overloaded), requests go on to: {s.fallback_order.join(' → ')}.
+                </span>
+              )}
             </p>
             <div className="grid gap-2 sm:grid-cols-2">
               {s.providers.map((p) => (
                 <div key={p.name} className={cn('flex items-center gap-2 rounded-md border p-2 text-sm', p.name === s.active_provider && 'border-primary')}>
                   {p.configured ? <CheckCircle className="h-4 w-4 text-green-600" /> : <Circle className="h-4 w-4 text-muted-foreground" />}
                   <span className="font-medium">{p.label}</span>
+                  {p.cooling_down && <span className="text-xs text-amber-700">failed recently</span>}
                   <code className="ml-auto text-xs text-muted-foreground">{p.env}</code>
                 </div>
               ))}
@@ -77,10 +83,10 @@ function AiProviderCard() {
         <details className="rounded-md bg-muted/40 p-3 text-sm">
           <summary className="cursor-pointer font-medium">How to add a key</summary>
           <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted-foreground">
-            <li>Get an API key from one provider (OpenAI, Anthropic, Google Gemini, Mistral, Groq, DeepSeek or OpenRouter).</li>
+            <li>Get an API key from one provider (OpenAI, Anthropic, Google Gemini, Mistral, Groq, DeepSeek, OpenRouter, NVIDIA NIM, Vercel AI Gateway, TeamoRouter or Token Harbor).</li>
             <li>
               Open the <code>.env</code> file in the project folder and set its line, e.g. <code>MISTRAL_API_KEY=&quot;your-key&quot;</code>.
-              Optional: <code>LLM_MODEL</code> picks a different model, <code>LLM_PROVIDER</code> picks one when several keys are set.
+              Use the exact variable name shown above. Optional: <code>LLM_MODEL</code> picks a different model, <code>LLM_PROVIDER</code> picks which one goes first when several keys are set.
             </li>
             <li>Restart the backend: <code>docker compose up -d backend celery-worker</code>, then press Test connection.</li>
           </ol>
