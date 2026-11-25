@@ -47,6 +47,7 @@ class StrategyGenerationResponseAPI(BaseModel):
     alternatives: dict
     is_approved: bool
     approved_at: Optional[datetime] = None
+    approval_feedback: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -95,7 +96,7 @@ async def _get_owned_strategy(
 
 class StrategyApprovalRequestAPI(BaseModel):
     approved: bool
-    feedback: Optional[str] = None
+    feedback: Optional[str] = Field(None, max_length=5000)
 
 
 @router.post("/{project_id}/strategies", response_model=StrategyGenerationResponseAPI, status_code=status.HTTP_201_CREATED)

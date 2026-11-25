@@ -317,6 +317,7 @@ model CreativeStrategy {
   alternatives        Json
   isApproved          Boolean        @default(false)
   approvedAt          DateTime?
+  approvalFeedback    String?
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
   productions         Production[]

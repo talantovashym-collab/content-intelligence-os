@@ -61,16 +61,18 @@ This starts:
 
 ### 3. Initialize Database
 
+The backend owns the database schema through **Alembic** migrations
+(`apps/backend/alembic/`). They run automatically when the API starts, so
+`docker-compose up` is enough. To run them by hand:
+
 ```bash
-# Generate Prisma client
-cd packages/db && npm run db:generate
-
-# Run migrations
-npm run db:migrate
-
-# Seed development data (optional)
-npm run db:seed
+cd apps/backend
+python -m app.db.migrate    # upgrade to head (stamps pre-Alembic dev DBs first)
 ```
+
+> Do not run `prisma migrate` or `prisma db push` against this database: the
+> Prisma schema in `packages/db` does not match the real tables (UUID ids,
+> snake_case columns) and Prisma would try to reset it.
 
 ### 4. Access the Application
 
@@ -248,12 +250,10 @@ uv run uvicorn app.main:app --reload  # Dev server
 uv run pytest        # Run tests
 uv run ruff check .  # Lint
 
-# Database
-cd packages/db
-npm run db:generate  # Generate Prisma client
-npm run db:push      # Push schema to DB
-npm run db:migrate   # Run migrations
-npm run db:studio    # Open Prisma Studio
+# Database (Alembic, from apps/backend)
+alembic upgrade head                          # Apply migrations
+alembic revision --autogenerate -m "message"  # New migration from model changes
+alembic check                                 # Fail if models and migrations differ
 
 # Docker
 docker-compose up -d           # Start all services

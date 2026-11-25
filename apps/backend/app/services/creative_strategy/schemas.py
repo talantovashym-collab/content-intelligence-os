@@ -43,6 +43,7 @@ class CreativeStrategyGenerationResponse(BaseModel):
     differentiation: str
     alternatives: Dict[str, Any]
     is_approved: bool
+    approval_feedback: Optional[str] = None
     created_at: datetime
 
 
