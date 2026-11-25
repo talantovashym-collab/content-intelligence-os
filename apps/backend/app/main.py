@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -5,7 +6,7 @@ from fastapi.responses import JSONResponse
 import structlog
 
 from app.core.config import settings
-from app.db.session import init_db
+from app.db.migrate import run_migrations
 from app.api.v1.router import api_router
 
 structlog.configure(
@@ -32,8 +33,9 @@ logger = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("starting_up", app_name=settings.APP_NAME, version=settings.APP_VERSION)
-    await init_db()
-    logger.info("database_initialized")
+    # Alembic's env.py calls asyncio.run, so run it off the event loop thread
+    await asyncio.to_thread(run_migrations)
+    logger.info("database_migrated")
     yield
     logger.info("shutting_down")
 

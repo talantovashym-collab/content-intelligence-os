@@ -33,6 +33,8 @@ class CreativeStrategy(Base):
     alternatives: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     is_approved: Mapped[bool] = mapped_column(default=False, nullable=False)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Reviewer's note from the most recent approve/reject decision
+    approval_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

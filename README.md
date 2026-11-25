@@ -13,8 +13,7 @@ content-intelligence-os/
 │   ├── frontend/          # Next.js 14 + React 18 + TypeScript + Tailwind
 │   └── backend/           # FastAPI + Python 3.11 + SQLAlchemy 2.0
 ├── packages/
-│   ├── shared/            # Shared TypeScript types & Zod schemas
-│   └── db/                # Prisma schema & migrations
+│   └── shared/            # Shared TypeScript types & Zod schemas
 ├── docker-compose.yml     # Local development stack
 └── .env.example           # Environment configuration template
 ```
@@ -25,7 +24,7 @@ content-intelligence-os/
 |-------|------------|
 | Frontend | Next.js 14, React 18, TypeScript, Tailwind CSS, Radix UI, TanStack Query |
 | Backend | FastAPI, Python 3.11, SQLAlchemy 2.0, Pydantic v2, Celery, Redis |
-| Database | PostgreSQL 16 + pgvector, Prisma ORM, Alembic migrations |
+| Database | PostgreSQL 16 + pgvector, SQLAlchemy models, Alembic migrations |
 | AI Providers | OpenAI, Anthropic, Google Gemini, ElevenLabs |
 | Media Processing | FFmpeg, Whisper, OpenCV, scenedetect, MoviePy |
 | Infrastructure | Docker Compose, Prometheus, Sentry |
@@ -61,23 +60,24 @@ This starts:
 
 ### 3. Initialize Database
 
+The backend owns the database schema through **Alembic** migrations
+(`apps/backend/alembic/`). They run automatically when the API starts, so
+`docker-compose up` is enough. To run them by hand:
+
 ```bash
-# Generate Prisma client
-cd packages/db && npm run db:generate
-
-# Run migrations
-npm run db:migrate
-
-# Seed development data (optional)
-npm run db:seed
+cd apps/backend
+python -m app.db.migrate    # upgrade to head (stamps pre-Alembic dev DBs first)
 ```
+
+To change the schema, edit the SQLAlchemy models in `apps/backend/app/models/`,
+then generate a migration with `alembic revision --autogenerate -m "..."`
+and review it before committing.
 
 ### 4. Access the Application
 
 - **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:8000
 - **API Docs**: http://localhost:8000/api/v1/docs
-- **Prisma Studio**: `cd packages/db && npm run db:studio`
 
 ## Project Structure
 
@@ -248,12 +248,10 @@ uv run uvicorn app.main:app --reload  # Dev server
 uv run pytest        # Run tests
 uv run ruff check .  # Lint
 
-# Database
-cd packages/db
-npm run db:generate  # Generate Prisma client
-npm run db:push      # Push schema to DB
-npm run db:migrate   # Run migrations
-npm run db:studio    # Open Prisma Studio
+# Database (Alembic, from apps/backend)
+alembic upgrade head                          # Apply migrations
+alembic revision --autogenerate -m "message"  # New migration from model changes
+alembic check                                 # Fail if models and migrations differ
 
 # Docker
 docker-compose up -d           # Start all services

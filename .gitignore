@@ -11,6 +11,8 @@ downloads/
 eggs/
 .eggs/
 lib/
+# ...but not the frontend's source folder of the same name
+!apps/frontend/src/lib/
 lib64/
 parts/
 sdist/
@@ -74,9 +76,6 @@ logs/
 # Storage
 storage/
 uploads/
-
-# Prisma
-prisma/migrations/
 
 # Celery
 celerybeat-schedule

@@ -415,7 +415,7 @@ class CreativeStrategyService:
 
         strategy.is_approved = approved
         strategy.approved_at = datetime.now(timezone.utc) if approved else None
-        # Store feedback in a note field or separate table if needed
+        strategy.approval_feedback = feedback
 
         await self.db.commit()
         await self.db.refresh(strategy)
