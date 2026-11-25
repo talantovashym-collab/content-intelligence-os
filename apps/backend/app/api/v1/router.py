@@ -13,9 +13,8 @@ from app.api.v1.endpoints import (
     analytics,
     knowledge,
     opportunity_discovery,
-    reference_capture,
-    media_engineering,
-    multi_reference_intelligence,
+    system,
+    workflows,
 )
 
 api_router = APIRouter()
@@ -32,6 +31,5 @@ api_router.include_router(publications.router, prefix="/publications", tags=["pu
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 api_router.include_router(knowledge.router, prefix="/knowledge", tags=["knowledge"])
 api_router.include_router(opportunity_discovery.router, prefix="/projects", tags=["opportunity-discovery"])
-api_router.include_router(reference_capture.router, prefix="/projects", tags=["reference-capture"])
-api_router.include_router(media_engineering.router, prefix="/projects", tags=["media-engineering"])
-api_router.include_router(multi_reference_intelligence.router, prefix="/projects", tags=["multi-reference-intelligence"])
+api_router.include_router(system.router, prefix="/system", tags=["system"])
+api_router.include_router(workflows.router, prefix="/projects", tags=["workflows"])

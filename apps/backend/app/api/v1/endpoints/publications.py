@@ -44,11 +44,12 @@ class PublicationUpdate(BaseModel):
     cover_image_url: Optional[str] = None
     video_url: Optional[str] = None
     scheduled_at: Optional[datetime] = None
+    published_at: Optional[datetime] = None
     status: Optional[PublishStatus] = None
     platform_post_id: Optional[str] = None
     platform_url: Optional[str] = None
     error_message: Optional[str] = None
-    metadata: Optional[dict] = None
+    publication_metadata: Optional[dict] = None
 
 
 class PublicationResponse(PublicationBase):
@@ -59,7 +60,7 @@ class PublicationResponse(PublicationBase):
     platform_url: Optional[str]
     published_at: Optional[datetime]
     error_message: Optional[str]
-    metadata: dict
+    publication_metadata: dict
     created_at: datetime
     updated_at: datetime
 

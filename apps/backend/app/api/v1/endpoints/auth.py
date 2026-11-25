@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import jwt, JWTError
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -127,4 +127,28 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=200)
+    current_password: Optional[str] = None
+    new_password: Optional[str] = Field(None, min_length=8, max_length=128)
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_current_user(
+    data: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update the signed-in user's name and/or password (password change needs the current one)."""
+    if data.new_password is not None:
+        if not data.current_password or not verify_password(data.current_password, current_user.password_hash):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+        current_user.password_hash = get_password_hash(data.new_password)
+    if "name" in data.model_fields_set:
+        current_user.name = (data.name or "").strip() or None
+    await db.commit()
+    await db.refresh(current_user)
     return current_user

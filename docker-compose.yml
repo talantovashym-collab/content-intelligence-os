@@ -38,14 +38,16 @@ services:
       context: ./apps/backend
       dockerfile: Dockerfile
     container_name: content-intelligence-backend
+    # App settings and secrets (SECRET_KEY, LLM provider keys, ...) come from .env;
+    # the environment entries below override the localhost URLs in it.
+    env_file:
+      - path: .env
+        required: false
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/content_intelligence
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
-      - SECRET_KEY=${SECRET_KEY:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - CORS_ORIGINS=["http://localhost:3000","http://localhost:3001"]
     ports:
       - "8000:8000"
@@ -65,14 +67,16 @@ services:
       context: ./apps/backend
       dockerfile: Dockerfile
     container_name: content-intelligence-celery-worker
+    # App settings and secrets (SECRET_KEY, LLM provider keys, ...) come from .env;
+    # the environment entries below override the localhost URLs in it.
+    env_file:
+      - path: .env
+        required: false
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/content_intelligence
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
-      - SECRET_KEY=${SECRET_KEY:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     volumes:
       - ./apps/backend:/app
       - ./storage:/app/storage
@@ -89,14 +93,16 @@ services:
       context: ./apps/backend
       dockerfile: Dockerfile
     container_name: content-intelligence-celery-beat
+    # App settings and secrets (SECRET_KEY, LLM provider keys, ...) come from .env;
+    # the environment entries below override the localhost URLs in it.
+    env_file:
+      - path: .env
+        required: false
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/content_intelligence
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
-      - SECRET_KEY=${SECRET_KEY:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     volumes:
       - ./apps/backend:/app
     depends_on:

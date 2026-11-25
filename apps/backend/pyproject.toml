@@ -38,6 +38,9 @@ dependencies = [
     # LLM providers used by creative strategy / production studio generation
     "openai==1.30.0",
     "anthropic==0.25.0",
+    # YouTube/TikTok search, metadata and captions without platform API keys.
+    # Unpinned upper bound on purpose: sites change and old releases stop working.
+    "yt-dlp>=2025.1.1",
 ]
 
 [project.optional-dependencies]
