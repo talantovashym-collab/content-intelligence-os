@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select
 import asyncio
+import uuid
 
 from app.core.config import settings
 from app.services.opportunity_discovery import OpportunityDiscoveryEngine
@@ -26,6 +27,9 @@ def run_scheduled_discovery(self):
 
 
 async def _run_scheduled_discovery_async():
+    # Each run calls YouTube and the paid LLM for every early-stage project, so it is opt-in
+    if not settings.AUTO_DISCOVERY_ENABLED:
+        return {"skipped": "AUTO_DISCOVERY_ENABLED is false"}
     async with AsyncSessionLocal() as db:
         # Find projects with auto-discovery enabled
         result = await db.execute(
@@ -44,11 +48,11 @@ async def _run_scheduled_discovery_async():
                     country=project.country,
                     platforms=[Platform.YOUTUBE],  # Default, could be from project.platforms
                     date_range_days=7,
-                    max_results=10,
+                    max_results=5,
                 )
 
                 engine = OpportunityDiscoveryEngine(db)
-                response = await engine.discover_opportunities(request, str(project.id))
+                response = await engine.discover_opportunities(request, project)
 
                 results.append({
                     "project_id": str(project.id),
@@ -105,13 +109,17 @@ async def _run_discovery_for_project_async(project_id: str, request_data: dict):
             creator_size_min=request_data.get("creator_size_min"),
             creator_size_max=request_data.get("creator_size_max"),
             min_engagement_rate=request_data.get("min_engagement_rate", 0.02),
-            max_results=request_data.get("max_results", 20),
+            max_results=min(request_data.get("max_results", 5), 8),
             include_competitor_analysis=request_data.get("include_competitor_analysis", True),
             include_trend_analysis=request_data.get("include_trend_analysis", True),
         )
 
+        project = await db.get(Project, uuid.UUID(project_id))
+        if project is None:
+            return {"project_id": project_id, "status": "error", "error": "Project not found"}
+
         engine = OpportunityDiscoveryEngine(db)
-        response = await engine.discover_opportunities(request, project_id)
+        response = await engine.discover_opportunities(request, project)
 
         return {
             "project_id": project_id,

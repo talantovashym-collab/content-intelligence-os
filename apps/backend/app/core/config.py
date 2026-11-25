@@ -61,11 +61,35 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:3001"]
 
-    # AI Providers
+    # AI Providers (see app/services/llm.py). Set the key for any one provider;
+    # LLM_PROVIDER picks one explicitly when several keys are set, LLM_MODEL
+    # overrides that provider's default model. With LLM_FALLBACK on, a failing
+    # provider (no credit, overloaded, bad key) hands the request to the next
+    # configured one, and is skipped for LLM_PROVIDER_COOLDOWN_SECONDS.
+    LLM_PROVIDER: Optional[str] = None
+    LLM_MODEL: Optional[str] = None
+    LLM_TIMEOUT_SECONDS: float = 120.0
+    LLM_FALLBACK: bool = True
+    # Optional comma list of provider names to fall back to, in order (default: every configured one)
+    LLM_FALLBACK_ORDER: Optional[str] = None
+    LLM_PROVIDER_COOLDOWN_SECONDS: float = 300.0
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
-    GOOGLE_AI_API_KEY: Optional[str] = None
+    GEMINI_API_KEY: Optional[str] = None
+    GOOGLE_AI_API_KEY: Optional[str] = None  # older name for GEMINI_API_KEY
+    MISTRAL_API_KEY: Optional[str] = None
+    GROQ_API_KEY: Optional[str] = None
+    DEEPSEEK_API_KEY: Optional[str] = None
+    OPENROUTER_API_KEY: Optional[str] = None
+    NVIDIA_API_KEY: Optional[str] = None  # NVIDIA NIM (build.nvidia.com)
+    AI_GATEWAY_API_KEY: Optional[str] = None  # Vercel AI Gateway
+    TEAMOROUTER_API_KEY: Optional[str] = None
+    TOKENHARBOR_API_KEY: Optional[str] = None
+    OLLAMA_BASE_URL: Optional[str] = None  # e.g. http://host.docker.internal:11434/v1
     ELEVENLABS_API_KEY: Optional[str] = None
+    # Daily background discovery for every early-stage project. Off by default:
+    # each run searches YouTube and calls the paid LLM once per project.
+    AUTO_DISCOVERY_ENABLED: bool = False
 
     # Social Media APIs
     YOUTUBE_API_KEY: Optional[str] = None

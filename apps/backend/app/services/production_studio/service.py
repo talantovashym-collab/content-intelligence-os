@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from app.models.production import Production, CreativeFormat
 from app.models.strategy import CreativeStrategy
+from app.services import llm
 from app.models.project import Project
 from app.services.production_studio.schemas import (
     ProductionGenerationRequest,
@@ -123,6 +124,9 @@ class ProductionStudioService:
         # Try AI generation first
         try:
             raw = await self._generate_with_ai(strategy, format_enum, request)
+        except llm.LLMUnavailable:
+            logger.info("No LLM provider configured, using template production")
+            raw = self._generate_template_assets(strategy, format_enum, request)
         except Exception as e:
             logger.warning(f"AI generation failed, using template fallback: {e}")
             raw = self._generate_template_assets(strategy, format_enum, request)
@@ -139,34 +143,14 @@ class ProductionStudioService:
         format_enum: CreativeFormat,
         request: ProductionGenerationRequest,
     ) -> Dict[str, Any]:
-        """Generate production assets using AI providers."""
-        try:
-            from openai import AsyncOpenAI
-            from app.core.config import settings
-
-            if not settings.OPENAI_API_KEY:
-                raise ValueError("OpenAI API key not configured")
-
-            client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-
-            prompt = self._build_production_prompt(strategy, format_enum, request)
-
-            response = await client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": "You are an expert production designer for viral content. Generate detailed production packages in JSON format."},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.7,
-                max_tokens=8000,
-                response_format={"type": "json_object"},
-            )
-
-            return json.loads(response.choices[0].message.content)
-
-        except Exception as e:
-            logger.error(f"OpenAI production generation failed: {e}")
-            raise
+        """Generate production assets with the configured LLM provider."""
+        prompt = self._build_production_prompt(strategy, format_enum, request)
+        return await llm.complete_json(
+            "You are an expert production designer for viral video content. "
+            "Generate detailed, production-ready packages.",
+            prompt,
+            max_tokens=8000,
+        )
 
     def _build_production_prompt(
         self,

@@ -1,150 +1,96 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ModuleTemplate } from '@/components/layout/module-template';
-import { Lightbulb, Zap, Search, Loader2, ArrowRight } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Lightbulb, Loader2, Zap } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/layout/page-header';
+import { OpportunityCard } from '@/components/opportunity-card';
+import { InlineError, SourceNote } from '@/components/source-note';
+import { opportunitiesApi, type Project } from '@/lib/api';
+import { ProjectGate } from '@/lib/project-context';
 
 export default function IdeasPage() {
-  const [idea, setIdea] = useState('');
-  const [isResearching, setIsResearching] = useState(false);
-  const [results, setResults] = useState<any>(null);
+  return (
+    <div className="space-y-6">
+      <PageHeader icon={Lightbulb} color="from-amber-500 to-orange-500" title="My Ideas"
+        description="Check your own video ideas against what already exists, and get sharper angles" />
+      <ProjectGate>{(project) => <IdeasWorkspace key={project.id} project={project} />}</ProjectGate>
+    </div>
+  );
+}
 
-  const handleResearch = async () => {
-    if (!idea.trim()) return;
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    setResults({
-      marketInterest: 0.85,
-      competitionLevel: 'medium',
-      suggestedAngles: ['Problem-solution', 'Case study', 'Comparison'],
-      recommendedFormats: ['educational', 'whiteboard', 'motion_graphics'],
-    });
-  };
+function IdeasWorkspace({ project }: { project: Project }) {
+  const queryClient = useQueryClient();
+  const [concept, setConcept] = useState('');
+  const [audience, setAudience] = useState(project.target_audience ?? '');
+
+  const ideas = useQuery({
+    queryKey: ['opportunities', project.id, 'idea'],
+    queryFn: () => opportunitiesApi.list(project.id, 'idea'),
+  });
+  const validate = useMutation({
+    mutationFn: () => opportunitiesApi.validateIdea(project.id, concept.trim(), audience.trim()),
+    onSuccess: () => {
+      setConcept('');
+      queryClient.invalidateQueries({ queryKey: ['opportunities', project.id] });
+    },
+  });
 
   return (
-    <ModuleTemplate
-      title="My Ideas"
-      description="Enter your concept and get market validation, reference recommendations, and strategy suggestions"
-      icon={
-        <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-          <polygon points="22 7 22 16 12 16 12 7 22 7" />
-        </svg>
-      }
-      color="from-amber-500 to-orange-500"
-      status="ready"
-      features={[
-        "Enter any idea, topic, or rough concept",
-        "AI-powered market validation and interest analysis",
-        "Automatic reference video recommendations",
-        "Competing format comparison and gap detection",
-        "Alternative angle and format suggestions",
-        "Opportunity assessment with confidence scoring",
-      ]}
-      ctaText="Research Your Idea"
-      ctaHref="#research-form"
-    >
-      <div id="research-form" className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-xl">Research Your Idea</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-xl">Validate an idea</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); validate.mutate(); }}>
             <div>
-              <label className="block text-sm font-medium mb-2">Your Idea / Concept</label>
-              <Textarea
-                placeholder="Enter any idea, topic, problem, theme, hook, or rough concept..."
-                className="min-h-[120px]"
-                value=""
-                onChange={(e) => {}}
-              />
+              <label htmlFor="concept" className="mb-1.5 block text-sm font-medium">Your idea</label>
+              <Textarea id="concept" required minLength={5} maxLength={1000} value={concept}
+                onChange={(e) => setConcept(e.target.value)} className="min-h-[80px]"
+                placeholder="e.g., Cooking a full week of meals for 20 dollars" />
             </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium mb-2">Target Audience (optional)</label>
-                <Input placeholder="e.g., Gen Z, remote workers, small business owners" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Platform Focus</label>
-                <Input placeholder="YouTube, TikTok, Instagram, etc." />
-              </div>
+            <div>
+              <label htmlFor="audience" className="mb-1.5 block text-sm font-medium">Audience</label>
+              <Input id="audience" value={audience} onChange={(e) => setAudience(e.target.value)} />
             </div>
-
-            <Button size="lg" className="w-full" onClick={() => {}}>
-              <Zap className="h-4 w-4 mr-2" />
-              Research This Idea
+            <InlineError error={validate.error} />
+            <Button type="submit" size="lg" className="w-full" disabled={validate.isPending || concept.trim().length < 5}>
+              {validate.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
+              {validate.isPending ? 'Checking YouTube…' : 'Validate idea'}
             </Button>
-          </CardContent>
-        </Card>
+            {validate.data && (
+              <div className="rounded-md bg-muted/40 p-3 text-sm">
+                Compared against {validate.data.videos_analyzed} existing videos. The result is at the top of the list below.
+                <div className="mt-1.5">
+                  <SourceNote source={validate.data.used_ai ? 'ai' : 'template'} warnings={validate.data.warnings} />
+                </div>
+              </div>
+            )}
+          </form>
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-xl">Research Results</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground text-center py-8">
-              Enter your idea above and click "Research This Idea" to get market validation,
-              reference recommendations, and strategic suggestions.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-xl">Example: "Micro-Habit Stacking for Remote Workers"</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="p-4 bg-muted rounded-lg">
-                <p className="text-xs text-muted-foreground">Market Interest</p>
-                <p className="text-3xl font-bold text-primary">85%</p>
-              </div>
-              <div className="p-4 bg-muted rounded-lg">
-                <p className="text-xs text-muted-foreground">Competition Level</p>
-                <p className="text-3xl font-bold text-primary">Medium</p>
-              </div>
-              <div className="p-4 bg-muted rounded-lg">
-                <p className="text-xs text-muted-foreground">Opportunity Score</p>
-                <p className="text-3xl font-bold text-primary">83/100</p>
-              </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="p-4 bg-muted rounded-lg">
-                <h4 className="font-semibold mb-2">Suggested Angles</h4>
-                <ul className="space-y-1 text-sm text-muted-foreground">
-                  <li>• Problem-solution narrative</li>
-                  <li>• Case study format</li>
-                  <li>• Comparison with traditional habits</li>
-                </ul>
-              </div>
-              <div className="p-4 bg-muted rounded-lg">
-                <h4 className="font-semibold mb-2">Recommended Formats</h4>
-                <ul className="space-y-1 text-sm text-muted-foreground">
-                  <li>• Educational deep-dive</li>
-                  <li>• Whiteboard animation</li>
-                  <li>• Motion graphics explainer</li>
-                </ul>
-              </div>
-            </div>
-
-            <div className="p-4 bg-muted rounded-lg">
-              <h4 className="font-semibold mb-2">Suggested Hooks</h4>
-              <ul className="space-y-1 text-sm text-muted-foreground">
-                <li>• "The 2-minute habit that 10x'd my output"</li>
-                <li>• "Why your morning routine is failing you"</li>
-                <li>• "The 3 micro-habits top 1% performers do daily"</li>
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </ModuleTemplate>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-xl">
+            Your ideas
+            {ideas.data && <span className="ml-2 text-base font-normal text-muted-foreground">({ideas.data.total})</span>}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {ideas.isLoading && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
+          <InlineError error={ideas.error} />
+          {ideas.data?.opportunities.length === 0 && (
+            <p className="py-6 text-center text-muted-foreground">No ideas yet.</p>
+          )}
+          {ideas.data?.opportunities.map((o) => <OpportunityCard key={o.id} projectId={project.id} opportunity={o} />)}
+        </CardContent>
+      </Card>
+    </>
   );
 }

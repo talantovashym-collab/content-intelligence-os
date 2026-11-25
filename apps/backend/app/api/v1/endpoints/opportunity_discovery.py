@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,9 +11,9 @@ from app.models.user import User
 from app.services.opportunity_discovery import (
     OpportunityDiscoveryEngine,
     OpportunityDiscoveryRequest,
-    OpportunityDiscoveryResponse,
 )
-from pydantic import BaseModel
+from app.api.v1.endpoints.opportunities import OpportunityResponse
+from pydantic import BaseModel, Field
 
 router = APIRouter()
 
@@ -29,12 +29,21 @@ class DiscoveryStartRequest(BaseModel):
     creator_size_min: Optional[int] = None
     creator_size_max: Optional[int] = None
     min_engagement_rate: float = 0.02
-    max_results: int = 20
+    max_results: int = Field(5, ge=1, le=8)
     include_competitor_analysis: bool = True
     include_trend_analysis: bool = True
 
 
-@router.post("/{project_id}/discover", response_model=OpportunityDiscoveryResponse)
+class DiscoveryResponse(BaseModel):
+    opportunities: List[OpportunityResponse]
+    videos_analyzed: int
+    used_ai: bool
+    provider: Optional[str]
+    queries: List[str]
+    warnings: List[str]
+
+
+@router.post("/{project_id}/discover", response_model=DiscoveryResponse)
 async def start_discovery(
     project_id: uuid.UUID,
     discovery_request: DiscoveryStartRequest,
@@ -94,9 +103,15 @@ async def start_discovery(
 
     # Run discovery engine
     engine = OpportunityDiscoveryEngine(db)
-    response = await engine.discover_opportunities(service_request, str(project_id))
-
-    return response
+    result = await engine.discover_opportunities(service_request, project)
+    return DiscoveryResponse(
+        opportunities=result.opportunities,
+        videos_analyzed=result.videos_analyzed,
+        used_ai=result.used_ai,
+        provider=result.provider,
+        queries=result.queries,
+        warnings=result.warnings,
+    )
 
 
 @router.get("/{project_id}/discover/status")

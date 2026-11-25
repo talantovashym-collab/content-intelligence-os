@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
 
 from app.models.strategy import CreativeStrategy
+from app.services import llm
 from app.models.project import Project
 from app.models.investigation import Investigation
 from app.models.knowledge import KnowledgeEntry
@@ -23,6 +24,49 @@ from app.services.creative_strategy.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+_DRAFT_TEXT_FIELDS = (
+    "creative_angle", "core_message", "emotional_objective", "hook_direction",
+    "narrative_formula", "visual_style", "animation_style", "differentiation",
+)
+
+
+def _as_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "; ".join(_as_text(v) for v in value)
+    if isinstance(value, dict):
+        return "; ".join(f"{k}: {_as_text(v)}" for k, v in value.items())
+    return str(value)
+
+
+def _as_object(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, list):
+        return {"options": value}
+    return {"summary": _as_text(value)} if value else {}
+
+
+def _normalize_draft(result: Dict[str, Any], default_duration: int) -> Dict[str, Any]:
+    """Models vary in shape (lists for objects, numbers as strings); coerce to the draft schema."""
+    out: Dict[str, Any] = {f: _as_text(result.get(f)) for f in _DRAFT_TEXT_FIELDS}
+    try:
+        out["duration"] = int(float(result.get("duration")))
+    except (TypeError, ValueError):
+        out["duration"] = default_duration
+    out["platform_adaptations"] = _as_object(result.get("platform_adaptations"))
+    out["alternatives"] = _as_object(result.get("alternatives"))
+    return out
+
+
+STRATEGY_SYSTEM_PROMPT = (
+    "You are an expert creative strategist for viral short-form and long-form video. "
+    "Generate detailed, actionable creative strategies."
+)
 
 
 class CreativeStrategyService:
@@ -161,18 +205,13 @@ class CreativeStrategyService:
         # Build comprehensive prompt
         prompt = self._build_strategy_prompt(request, research_data)
 
-        # Try each enabled provider in turn; fall back to templates only if all fail
-        providers = []
-        if options.use_openai:
-            providers.append(("openai", self._generate_with_openai))
-        if options.use_anthropic:
-            providers.append(("anthropic", self._generate_with_anthropic))
-        for name, generate in providers:
-            try:
-                return await generate(prompt, options)
-            except Exception as e:
-                logger.warning(f"{name} strategy generation failed: {e}")
-        logger.warning("All AI providers failed or unavailable, using template fallback")
+        try:
+            result = await llm.complete_json(STRATEGY_SYSTEM_PROMPT, prompt, max_tokens=options.max_tokens, temperature=options.temperature)
+            return CreativeStrategyDraft(**_normalize_draft(result, request.duration_preference))
+        except llm.LLMUnavailable:
+            logger.info("No LLM provider configured, using template strategy")
+        except Exception as e:
+            logger.warning(f"LLM strategy generation failed, using template: {e}")
 
         # Fallback to template-based generation
         return self._generate_template_strategy(request, research_data)
@@ -228,81 +267,14 @@ class CreativeStrategyService:
             f"5. narrative_formula: Story structure (e.g., 'Problem-Agitate-Solve', 'Hero Journey')",
             f"6. visual_style: Visual aesthetic description",
             f"7. animation_style: Animation approach",
-            f"8. duration: Exact duration in seconds",
-            f"9. platform_adaptations: Object with platform-specific tweaks",
+            f"8. duration: Exact duration in seconds (integer)",
+            f"9. platform_adaptations: Object keyed by platform name, each value a string of tweaks",
             f"10. differentiation: How this stands out from competitors",
-            f"11. alternatives: 2-3 alternative angles/approaches",
+            f"11. alternatives: Object with 2-3 entries, each key a short angle name and each value its description",
+            f"Fields 1-7 and 10 are plain strings.",
         ])
 
         return "\n".join(prompt_parts)
-
-    async def _generate_with_openai(
-        self,
-        prompt: str,
-        options: StrategyGenerationOptions,
-    ) -> CreativeStrategyDraft:
-        """Generate strategy using OpenAI."""
-        try:
-            from openai import AsyncOpenAI
-            from app.core.config import settings
-
-            if not settings.OPENAI_API_KEY:
-                raise ValueError("OpenAI API key not configured")
-
-            client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-
-            response = await client.chat.completions.create(
-                model=options.llm_model,
-                messages=[
-                    {"role": "system", "content": "You are an expert creative strategist for viral content. Generate detailed, actionable creative strategies in JSON format."},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=options.temperature,
-                max_tokens=options.max_tokens,
-                response_format={"type": "json_object"},
-            )
-
-            result = json.loads(response.choices[0].message.content)
-            return CreativeStrategyDraft(**result)
-
-        except Exception as e:
-            logger.error(f"OpenAI generation failed: {e}")
-            raise
-
-    async def _generate_with_anthropic(
-        self,
-        prompt: str,
-        options: StrategyGenerationOptions,
-    ) -> CreativeStrategyDraft:
-        """Generate strategy using Anthropic Claude."""
-        try:
-            import anthropic
-            from app.core.config import settings
-
-            if not settings.ANTHROPIC_API_KEY:
-                raise ValueError("Anthropic API key not configured")
-
-            client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-
-            response = await client.messages.create(
-                model=options.anthropic_model,
-                max_tokens=options.max_tokens,
-                temperature=options.temperature,
-                system="You are an expert creative strategist for viral content. Generate detailed, actionable creative strategies in JSON format.",
-                messages=[{"role": "user", "content": prompt}],
-            )
-
-            text = response.content[0].text
-            # Claude may wrap the JSON in prose or a code fence; take the outermost object
-            start, end = text.find("{"), text.rfind("}")
-            if start == -1 or end <= start:
-                raise ValueError("Anthropic response contained no JSON object")
-            result = json.loads(text[start:end + 1])
-            return CreativeStrategyDraft(**result)
-
-        except Exception as e:
-            logger.error(f"Anthropic generation failed: {e}")
-            raise
 
     def _generate_template_strategy(
         self,

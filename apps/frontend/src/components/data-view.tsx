@@ -3,7 +3,8 @@ import { cn } from '@/lib/utils';
 
 /** "hook_direction" / "hookDirection" -> "Hook direction" */
 function label(key: string): string {
-  const words = key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').trim().toLowerCase();
+  const words = key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').trim().toLowerCase()
+    .replace(/\b(dna|cta|ai|ocr)\b/g, (w) => w.toUpperCase()).replace(/\bctas\b/g, 'CTAs');
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 

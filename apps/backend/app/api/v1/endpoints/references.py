@@ -54,7 +54,7 @@ class ReferenceUpdate(BaseModel):
     hashtags: Optional[List[str]] = None
     captions: Optional[str] = None
     status: Optional[ReferenceStatus] = None
-    metadata: Optional[dict] = None
+    reference_metadata: Optional[dict] = None
     error_message: Optional[str] = None
 
 
@@ -62,7 +62,7 @@ class ReferenceResponse(ReferenceBase):
     id: uuid.UUID
     project_id: uuid.UUID
     status: ReferenceStatus
-    metadata: dict
+    reference_metadata: dict
     error_message: Optional[str]
     created_at: datetime
     updated_at: datetime

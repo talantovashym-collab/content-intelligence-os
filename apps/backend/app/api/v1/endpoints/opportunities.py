@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Union
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,24 +14,27 @@ from datetime import datetime
 
 router = APIRouter()
 
+# JSONB columns: discovery stores objects, older rows may hold lists
+JSONValue = Union[Dict[str, Any], List[Any]]
+
 
 class OpportunityBase(BaseModel):
     title: str
     topic_description: str
     target_audience: str
     audience_need: str
-    market_evidence: dict = {}
-    relevant_trends: dict = {}
-    competing_content: dict = {}
-    reference_videos: dict = {}
-    relevant_creators: dict = {}
-    performance_data: dict = {}
-    audience_reactions: dict = {}
+    market_evidence: JSONValue = {}
+    relevant_trends: JSONValue = {}
+    competing_content: JSONValue = {}
+    reference_videos: JSONValue = {}
+    relevant_creators: JSONValue = {}
+    performance_data: JSONValue = {}
+    audience_reactions: JSONValue = {}
     creative_formats: List[CreativeFormat] = []
-    potential_hooks: dict = {}
-    risks: dict = {}
+    potential_hooks: JSONValue = {}
+    risks: JSONValue = {}
     confidence_level: float
-    recommended_actions: dict = {}
+    recommended_actions: JSONValue = {}
 
 
 class OpportunityCreate(OpportunityBase):
@@ -43,18 +46,18 @@ class OpportunityUpdate(BaseModel):
     topic_description: Optional[str] = None
     target_audience: Optional[str] = None
     audience_need: Optional[str] = None
-    market_evidence: Optional[dict] = None
-    relevant_trends: Optional[dict] = None
-    competing_content: Optional[dict] = None
-    reference_videos: Optional[dict] = None
-    relevant_creators: Optional[dict] = None
-    performance_data: Optional[dict] = None
-    audience_reactions: Optional[dict] = None
+    market_evidence: Optional[JSONValue] = None
+    relevant_trends: Optional[JSONValue] = None
+    competing_content: Optional[JSONValue] = None
+    reference_videos: Optional[JSONValue] = None
+    relevant_creators: Optional[JSONValue] = None
+    performance_data: Optional[JSONValue] = None
+    audience_reactions: Optional[JSONValue] = None
     creative_formats: Optional[List[CreativeFormat]] = None
-    potential_hooks: Optional[dict] = None
-    risks: Optional[dict] = None
+    potential_hooks: Optional[JSONValue] = None
+    risks: Optional[JSONValue] = None
     confidence_level: Optional[float] = None
-    recommended_actions: Optional[dict] = None
+    recommended_actions: Optional[JSONValue] = None
     status: Optional[OpportunityStatus] = None
     rank_scores: Optional[dict] = None
 
@@ -109,6 +112,7 @@ async def list_opportunities(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     status: Optional[OpportunityStatus] = None,
+    origin: Optional[str] = Query(None, description="discovery | idea"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -123,6 +127,8 @@ async def list_opportunities(
     query = select(Opportunity).where(Opportunity.project_id == project_id)
     if status:
         query = query.where(Opportunity.status == status)
+    if origin:
+        query = query.where(Opportunity.market_evidence["origin"].astext == origin)
 
     count_query = select(func.count()).select_from(query.subquery())
     total = await db.scalar(count_query)

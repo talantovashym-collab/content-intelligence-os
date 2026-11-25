@@ -25,8 +25,8 @@ content-intelligence-os/
 | Frontend | Next.js 14, React 18, TypeScript, Tailwind CSS, Radix UI, TanStack Query |
 | Backend | FastAPI, Python 3.11, SQLAlchemy 2.0, Pydantic v2, Celery, Redis |
 | Database | PostgreSQL 16 + pgvector, SQLAlchemy models, Alembic migrations |
-| AI Providers | OpenAI, Anthropic, Google Gemini, ElevenLabs |
-| Media Processing | FFmpeg, Whisper, OpenCV, scenedetect, MoviePy |
+| AI Providers | Any one of OpenAI, Anthropic, Google Gemini, Mistral, Groq, DeepSeek, OpenRouter or local Ollama |
+| Video Research | yt-dlp (YouTube search, metadata and captions without API keys), FFmpeg |
 | Infrastructure | Docker Compose, Prometheus, Sentry |
 
 ## Quick Start
@@ -203,30 +203,63 @@ src/
 - `POST /api/v1/projects/{id}/knowledge` - Add knowledge entry
 - `GET /api/v1/projects/{id}/knowledge` - List knowledge entries
 
-## AI Opportunity Discovery Engine
+## AI Providers
 
-The engine performs:
-1. **Trend Research** - Finds trending keywords across platforms
-2. **Creator Analysis** - Identifies successful creators in niche
-3. **Competitor Analysis** - Analyzes competing content performance
-4. **Reference Discovery** - Finds high-quality reference videos
-5. **Opportunity Generation** - Creates ranked content opportunities
-6. **Multi-dimensional Ranking** - 7 ranking dimensions with weights
+Every AI feature goes through one client (`apps/backend/app/services/llm.py`). Set the
+API key for **any one** provider in `.env` and restart the backend
+(`docker compose up -d backend celery-worker`):
 
-### Ranking Dimensions
-- Market Interest (20%)
-- Trend Momentum (15%)
-- Audience Relevance (20%)
-- Content Saturation (15%) - inverse
-- Reference Quality (10%)
-- Creative Potential (10%)
-- Production Feasibility (10%)
+| Provider | Variable | Default model |
+|----------|----------|---------------|
+| OpenAI | `OPENAI_API_KEY` | gpt-4o-mini |
+| Anthropic | `ANTHROPIC_API_KEY` | claude-sonnet-5-5 |
+| Google Gemini | `GEMINI_API_KEY` | gemini-flash-latest |
+| Mistral | `MISTRAL_API_KEY` | mistral-medium-latest |
+| Groq | `GROQ_API_KEY` | openai/gpt-oss-120b |
+| DeepSeek | `DEEPSEEK_API_KEY` | deepseek-flash |
+| OpenRouter | `OPENROUTER_API_KEY` | openrouter/auto |
+| NVIDIA NIM | `NVIDIA_API_KEY` | nvidia/nemotron-3.5-lightning-30b-a3b |
+| Vercel AI Gateway | `AI_GATEWAY_API_KEY` | openai/gpt-4o-mini |
+| TeamoRouter | `TEAMOROUTER_API_KEY` | deepseek-v4-flash |
+| Token Harbor | `TOKENHARBOR_API_KEY` | deepseek-v4-flash:free |
+| Ollama (local) | `OLLAMA_BASE_URL` | llama3.1 |
+
+`LLM_MODEL` overrides the model, `LLM_PROVIDER` picks which one goes first when several keys are
+set. If a provider fails (out of credit, overloaded, bad key) the request moves on to the next
+configured provider, and the failed one is skipped for 5 minutes. `LLM_FALLBACK_ORDER`
+(e.g. `gemini,openrouter,nvidia`) limits and orders the fallbacks; `LLM_FALLBACK=false` turns them off.
+Settings → AI provider shows which one is active and has a **Test connection** button.
+Without any key every module still works and produces template output built from the
+real data (search results, transcripts, stats).
+
+## How the modules fit together
+
+1. **Discover / My Ideas**: YouTube search (via yt-dlp) for the niche or idea; the AI ranks
+   gaps and angles. Reference videos are always real search results.
+2. **Reference Research / Library**: search YouTube or paste any video URL; the library stores
+   real stats and the caption transcript.
+3. **Investigation Studio**: hooks, structure, pacing, CTAs, curiosity loops... from the
+   timestamped transcript, with links to the exact second in the video.
+4. **Multi-Reference Intelligence**: compares 2–10 references into "creative DNA", saved to the
+   Knowledge Base.
+5. **Creative Strategy → Production Studio**: strategies read the Knowledge Base; approved
+   strategies become production packages.
+6. **Testing Lab**: generated A/B variants with a predicted winner; record the real winner.
+7. **Publishing Center**: platform-optimised titles, descriptions and hashtags. Posting to the
+   platforms is manual for now (needs each platform's app credentials).
+8. **Performance Analytics**: pulls public views/likes/comments from the live video URL,
+   diagnoses performance and saves learnings to the Knowledge Base.
+
+### Opportunity ranking
+
+Market interest 22%, audience relevance 20%, creative potential 18%, trend momentum 15%,
+content saturation 13% (inverse), production feasibility 12%.
 
 ## Background Jobs (Celery)
 
 | Task | Schedule | Description |
 |------|----------|-------------|
-| `daily-opportunity-discovery` | 24h | Auto-discover for active projects |
+| `daily-opportunity-discovery` | 24h | Auto-discover for early-stage projects (off unless `AUTO_DISCOVERY_ENABLED=true`; each run calls the paid LLM per project) |
 | `hourly-analytics-sync` | 1h | Sync platform analytics |
 | `daily-publishing-queue` | 1h | Process scheduled publications |
 
@@ -267,22 +300,18 @@ Key variables:
 - `DATABASE_URL` - PostgreSQL connection string
 - `REDIS_URL` - Redis connection string
 - `SECRET_KEY` - JWT signing key (generate with `openssl rand -base64 32`)
-- `OPENAI_API_KEY` - OpenAI API key
-- `ANTHROPIC_API_KEY` - Anthropic API key
-- `GOOGLE_AI_API_KEY` - Google Gemini API key
+- One LLM provider key (see [AI Providers](#ai-providers)), plus optional `LLM_PROVIDER` / `LLM_MODEL`
+- `AUTO_DISCOVERY_ENABLED` - daily background discovery (default `false`)
 - `ELEVENLABS_API_KEY` - ElevenLabs API key
 - Social media API keys for publishing
 
 ## Next Steps (Roadmap)
 
-- [ ] Reference Discovery & Capture (Modules 2-3)
-- [ ] Reverse Media Engineering Pipeline (Module 4)
-- [ ] Multi-Reference Intelligence (Module 5)
-- [ ] Creative Strategy & Production Studio (Modules 6-7)
-- [ ] Testing & Validation Lab (Module 8)
-- [ ] Publishing Orchestration (Module 9)
-- [ ] Performance Intelligence & Continuous Learning (Modules 10-11)
-- [ ] Unified Project Workspace UI
+- [x] Discovery, reference research and capture, investigation, multi-reference intelligence
+- [x] Creative strategy, production studio, testing lab, publishing center, analytics, knowledge base
+- [x] Unified project workspace UI
+- [ ] Frame-level visual analysis (download the video + a vision model)
+- [ ] Direct publishing and private analytics via platform APIs (YouTube, TikTok, Instagram OAuth)
 - [ ] Integration tests, security hardening, deployment config
 
 ## License
