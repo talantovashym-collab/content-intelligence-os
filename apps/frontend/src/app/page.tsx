@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -117,8 +118,8 @@ export default function HomePage() {
             </nav>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm">Sign In</Button>
-            <Button size="sm">Get Started</Button>
+            <Button variant="ghost" size="sm" asChild><Link href="/login">Sign In</Link></Button>
+            <Button size="sm" asChild><Link href="/register">Get Started</Link></Button>
           </div>
         </div>
         {mobileMenuOpen && (
@@ -167,9 +168,11 @@ export default function HomePage() {
               Performance Analysis → Continuous Improvement
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Button size="lg" className="gap-2">
-                <Zap className="h-5 w-5" />
-                Start Free
+              <Button size="lg" className="gap-2" asChild>
+                <Link href="/register">
+                  <Zap className="h-5 w-5" />
+                  Start Free
+                </Link>
               </Button>
               <Button variant="outline" size="lg">View Demo</Button>
             </div>
@@ -254,8 +257,8 @@ export default function HomePage() {
                     ))}
                   </ul>
                   {activeEntryPoint === entry.id && (
-                    <Button className="mt-4 w-full" size="lg">
-                      Start with {entry.title.split(' ')[0]} Mode
+                    <Button className="mt-4 w-full" size="lg" asChild>
+                      <Link href="/dashboard">Start with {entry.title.split(' ')[0]} Mode</Link>
                     </Button>
                   )}
                 </CardContent>
@@ -367,9 +370,11 @@ export default function HomePage() {
               Join creators and teams using AI to discover, research, produce, and optimize content at scale.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Button size="lg" className="gap-2">
-                <Zap className="h-5 w-5" />
-                Start Free Trial
+              <Button size="lg" className="gap-2" asChild>
+                <Link href="/register">
+                  <Zap className="h-5 w-5" />
+                  Start Free Trial
+                </Link>
               </Button>
               <Button variant="outline" size="lg">Schedule Demo</Button>
             </div>

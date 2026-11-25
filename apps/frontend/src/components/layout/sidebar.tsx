@@ -23,8 +23,10 @@ import {
   Menu,
   X,
   Zap,
+  LogOut,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/lib/auth';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -45,6 +47,7 @@ const navigation = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
   const [isOpen, setIsOpen] = React.useState(false);
 
   return (
@@ -100,9 +103,12 @@ export function Sidebar() {
                 <UserCircle className="h-5 w-5 text-primary-foreground" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">User Name</p>
-                <p className="text-xs text-muted-foreground truncate">user@example.com</p>
+                <p className="text-sm font-medium truncate">{user.name || user.email.split('@')[0]}</p>
+                <p className="text-xs text-muted-foreground truncate">{user.email}</p>
               </div>
+              <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={logout} aria-label="Sign out" title="Sign out">
+                <LogOut className="h-4 w-4" />
+              </Button>
             </div>
           </div>
         </div>
