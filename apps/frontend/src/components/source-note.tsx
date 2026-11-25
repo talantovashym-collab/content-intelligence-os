@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { AlertTriangle, Sparkles } from 'lucide-react';
 import type { Source } from '@/lib/api';
 
-/** Says whether a result came from the AI provider or the no-key template, plus any warnings. */
+/** Says whether a result came from the user's AI provider or the no-key template, plus any warnings. */
 export function SourceNote({ source, warnings }: { source?: Source | null; warnings?: (string | null | undefined)[] }) {
   const notes = (warnings ?? []).filter(Boolean) as string[];
   if (!source && notes.length === 0) return null;
@@ -17,8 +17,8 @@ export function SourceNote({ source, warnings }: { source?: Source | null; warni
       {source === 'template' && notes.length === 0 && (
         <p className="flex items-center gap-1.5 text-xs text-amber-700">
           <AlertTriangle className="h-3.5 w-3.5" />
-          Template output (no AI provider).{' '}
-          <Link href="/settings" className="underline">Add an API key</Link> for real analysis.
+          Template output: you have not added an AI key yet.{' '}
+          <Link href="/settings#ai-keys" className="underline">Add your API key</Link> for real analysis.
         </p>
       )}
       {notes.map((n) => (

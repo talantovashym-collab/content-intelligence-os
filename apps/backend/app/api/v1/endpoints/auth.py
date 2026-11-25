@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.user import User
+from app.services import llm
 
 router = APIRouter()
 
@@ -85,6 +86,8 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     if user is None:
         raise credentials_exception
+    # AI calls made while handling this request use this user's own provider keys
+    llm.set_user(user.id)
     return user
 
 

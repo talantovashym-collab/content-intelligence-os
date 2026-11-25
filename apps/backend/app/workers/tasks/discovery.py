@@ -13,6 +13,7 @@ from app.services.opportunity_discovery.schemas import (
     CreativeFormat,
 )
 from app.models.project import Project
+from app.services import llm
 
 
 # Create async engine for Celery tasks
@@ -51,6 +52,8 @@ async def _run_scheduled_discovery_async():
                     max_results=5,
                 )
 
+                # Background jobs run with the project owner's own AI keys
+                await llm.use_user(db, project.user_id)
                 engine = OpportunityDiscoveryEngine(db)
                 response = await engine.discover_opportunities(request, project)
 
@@ -118,6 +121,7 @@ async def _run_discovery_for_project_async(project_id: str, request_data: dict):
         if project is None:
             return {"project_id": project_id, "status": "error", "error": "Project not found"}
 
+        await llm.use_user(db, project.user_id)
         engine = OpportunityDiscoveryEngine(db)
         response = await engine.discover_opportunities(request, project)
 

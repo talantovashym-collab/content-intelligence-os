@@ -2,10 +2,14 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
+import { KeyRound } from 'lucide-react';
 import { Sidebar } from './sidebar';
 import { cn } from '@/lib/utils';
 import { RequireAuth } from '@/lib/auth';
 import { ProjectProvider, useProjects } from '@/lib/project-context';
+import { systemApi } from '@/lib/api';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -26,7 +30,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 <ProjectSwitcher />
               </div>
             </header>
-            <div className="container p-4 md:p-6">{children}</div>
+            <div className="container p-4 md:p-6">
+              <NoKeyBanner />
+              {children}
+            </div>
           </main>
         </div>
       </ProjectProvider>
@@ -61,5 +68,25 @@ function ProjectSwitcher() {
         ))}
       </select>
     </label>
+  );
+}
+
+
+/** Every user brings their own AI key; until they add one, say so on every page but Settings. */
+function NoKeyBanner() {
+  const pathname = usePathname();
+  const status = useQuery({ queryKey: ['system', 'ai'], queryFn: systemApi.ai, staleTime: 60_000 });
+  if (pathname.startsWith('/settings') || !status.data || status.data.active_provider) return null;
+  return (
+    <div className="mb-6 flex flex-wrap items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+      <KeyRound className="h-4 w-4 shrink-0" />
+      <p className="flex-1">
+        <span className="font-medium">Add your own AI key to turn on analysis.</span> Each account uses its own
+        OpenAI, Anthropic, Gemini, Groq or other provider key. Until then, results are templates.
+      </p>
+      <Link href="/settings#ai-keys" className="rounded-md bg-amber-900 px-3 py-1.5 text-xs font-medium text-amber-50 hover:bg-amber-800 dark:bg-amber-200 dark:text-amber-950">
+        Add a key
+      </Link>
+    </div>
   );
 }
