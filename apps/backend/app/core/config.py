@@ -1,7 +1,39 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import model_validator
 from typing import List, Optional
+import os
 import secrets
+
+# Values that mean "not configured" (empty, or the .env.example placeholder)
+_SECRET_KEY_PLACEHOLDER_PREFIX = "your-secret-key"
+_DEV_SECRET_KEY_FILE = Path(
+    os.getenv("DEV_SECRET_KEY_FILE", Path(__file__).resolve().parents[2] / "storage" / ".dev_secret_key")
+)
+
+
+def _load_or_create_dev_secret_key(path: Path = _DEV_SECRET_KEY_FILE) -> str:
+    """Return a dev-only signing key that is stable across processes and restarts.
+
+    A per-process random key invalidates every token on each --reload and makes
+    tokens minted by one worker unusable in another, so persist one to disk.
+    """
+    try:
+        key = path.read_text(encoding="utf-8").strip()
+        if key:
+            return key
+    except FileNotFoundError:
+        pass
+    path.parent.mkdir(parents=True, exist_ok=True)
+    key = secrets.token_urlsafe(48)
+    try:
+        # "x" = exclusive create: if another process won the race, use its key
+        with open(path, "x", encoding="utf-8") as f:
+            f.write(key)
+        os.chmod(path, 0o600)
+        return key
+    except FileExistsError:
+        return path.read_text(encoding="utf-8").strip()
 
 
 class Settings(BaseSettings):
@@ -12,7 +44,7 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
 
     # Security
-    SECRET_KEY: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
+    SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
@@ -61,6 +93,18 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+
+    @model_validator(mode="after")
+    def _resolve_secret_key(self) -> "Settings":
+        if self.SECRET_KEY and not self.SECRET_KEY.startswith(_SECRET_KEY_PLACEHOLDER_PREFIX):
+            return self
+        if not self.DEBUG:
+            raise ValueError(
+                "SECRET_KEY must be set to a real value when DEBUG is false "
+                "(generate one with: openssl rand -base64 32)"
+            )
+        self.SECRET_KEY = _load_or_create_dev_secret_key()
+        return self
 
 
 settings = Settings()
