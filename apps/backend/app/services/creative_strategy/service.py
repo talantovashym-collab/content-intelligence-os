@@ -25,6 +25,44 @@ from app.services.creative_strategy.schemas import (
 
 logger = logging.getLogger(__name__)
 
+_DRAFT_TEXT_FIELDS = (
+    "creative_angle", "core_message", "emotional_objective", "hook_direction",
+    "narrative_formula", "visual_style", "animation_style", "differentiation",
+)
+
+
+def _as_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "; ".join(_as_text(v) for v in value)
+    if isinstance(value, dict):
+        return "; ".join(f"{k}: {_as_text(v)}" for k, v in value.items())
+    return str(value)
+
+
+def _as_object(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, list):
+        return {"options": value}
+    return {"summary": _as_text(value)} if value else {}
+
+
+def _normalize_draft(result: Dict[str, Any], default_duration: int) -> Dict[str, Any]:
+    """Models vary in shape (lists for objects, numbers as strings); coerce to the draft schema."""
+    out: Dict[str, Any] = {f: _as_text(result.get(f)) for f in _DRAFT_TEXT_FIELDS}
+    try:
+        out["duration"] = int(float(result.get("duration")))
+    except (TypeError, ValueError):
+        out["duration"] = default_duration
+    out["platform_adaptations"] = _as_object(result.get("platform_adaptations"))
+    out["alternatives"] = _as_object(result.get("alternatives"))
+    return out
+
+
 STRATEGY_SYSTEM_PROMPT = (
     "You are an expert creative strategist for viral short-form and long-form video. "
     "Generate detailed, actionable creative strategies."
@@ -169,7 +207,7 @@ class CreativeStrategyService:
 
         try:
             result = await llm.complete_json(STRATEGY_SYSTEM_PROMPT, prompt, max_tokens=options.max_tokens, temperature=options.temperature)
-            return CreativeStrategyDraft(**result)
+            return CreativeStrategyDraft(**_normalize_draft(result, request.duration_preference))
         except llm.LLMUnavailable:
             logger.info("No LLM provider configured, using template strategy")
         except Exception as e:
@@ -229,10 +267,11 @@ class CreativeStrategyService:
             f"5. narrative_formula: Story structure (e.g., 'Problem-Agitate-Solve', 'Hero Journey')",
             f"6. visual_style: Visual aesthetic description",
             f"7. animation_style: Animation approach",
-            f"8. duration: Exact duration in seconds",
-            f"9. platform_adaptations: Object with platform-specific tweaks",
+            f"8. duration: Exact duration in seconds (integer)",
+            f"9. platform_adaptations: Object keyed by platform name, each value a string of tweaks",
             f"10. differentiation: How this stands out from competitors",
-            f"11. alternatives: 2-3 alternative angles/approaches",
+            f"11. alternatives: Object with 2-3 entries, each key a short angle name and each value its description",
+            f"Fields 1-7 and 10 are plain strings.",
         ])
 
         return "\n".join(prompt_parts)

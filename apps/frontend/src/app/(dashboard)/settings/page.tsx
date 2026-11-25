@@ -67,7 +67,7 @@ function AiProviderCard() {
               </Button>
               {test.data && (
                 <span className="text-sm text-green-700">
-                  Working: replied “{test.data.reply}” in {(test.data.latency_ms / 1000).toFixed(1)}s
+                  Working: {test.data.model} replied “{test.data.reply}” in {(test.data.latency_ms / 1000).toFixed(1)}s
                 </span>
               )}
             </div>

@@ -27,7 +27,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.core.config import settings
 
@@ -51,13 +51,17 @@ class Provider:
     base_url: Optional[str] = None  # None = the SDK default (api.openai.com)
     json_mode: bool = False  # supports response_format={"type": "json_object"}
     transcription_model: Optional[str] = None  # OpenAI-style /audio/transcriptions
+    # Tried in order when the main model is overloaded (503), rate-limited (429) or retired (404)
+    fallback_models: tuple = ()
 
 
 PROVIDERS: List[Provider] = [
     Provider("openai", "OpenAI", ("OPENAI_API_KEY",), "gpt-4o-mini", json_mode=True, transcription_model="whisper-1"),
     Provider("anthropic", "Anthropic", ("ANTHROPIC_API_KEY",), "claude-sonnet-5-5"),
-    Provider("gemini", "Google Gemini", ("GEMINI_API_KEY", "GOOGLE_AI_API_KEY"), "gemini-2.5-flash",
-             base_url="https://generativelanguage.googleapis.com/v1beta/openai/"),
+    # "-latest" aliases follow Google's current Flash models, so the default does not go stale
+    Provider("gemini", "Google Gemini", ("GEMINI_API_KEY", "GOOGLE_AI_API_KEY"), "gemini-flash-latest",
+             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+             fallback_models=("gemini-flash-lite-latest",)),
     Provider("mistral", "Mistral", ("MISTRAL_API_KEY",), "mistral-large-latest",
              base_url="https://api.mistral.ai/v1", json_mode=True),
     Provider("groq", "Groq", ("GROQ_API_KEY",), "llama-3.3-70b-versatile",
@@ -119,12 +123,20 @@ def status() -> Dict[str, Any]:
     }
 
 
+# One quick SDK retry per model; on a busy model we move to the next fallback instead of waiting
+_SDK_RETRIES = 1
+# Overloaded, rate-limited, gone or not found: worth trying the next model
+_FALLBACK_STATUSES = {404, 429, 500, 502, 503, 504, 529}
+
+
 def _openai_client(provider: Provider):
     from openai import AsyncOpenAI
 
     if provider.name == "ollama":
-        return AsyncOpenAI(base_url=_key(provider), api_key="ollama", timeout=settings.LLM_TIMEOUT_SECONDS)
-    return AsyncOpenAI(api_key=_key(provider), base_url=provider.base_url, timeout=settings.LLM_TIMEOUT_SECONDS)
+        return AsyncOpenAI(base_url=_key(provider), api_key="ollama", timeout=settings.LLM_TIMEOUT_SECONDS,
+                           max_retries=_SDK_RETRIES)
+    return AsyncOpenAI(api_key=_key(provider), base_url=provider.base_url, timeout=settings.LLM_TIMEOUT_SECONDS,
+                       max_retries=_SDK_RETRIES)
 
 
 def _require_provider() -> Provider:
@@ -132,6 +144,72 @@ def _require_provider() -> Provider:
     if provider is None:
         raise LLMUnavailable("No LLM provider configured; set an API key in .env (see app/services/llm.py)")
     return provider
+
+
+def _models_to_try(provider: Provider) -> List[str]:
+    models = [active_model(provider)]
+    models += [m for m in provider.fallback_models if m not in models]
+    return models
+
+
+async def _call(provider: Provider, model: str, system: str, prompt: str, max_tokens: int,
+                temperature: float, json_mode: bool) -> str:
+    if provider.name == "anthropic":
+        import anthropic
+
+        client = anthropic.AsyncAnthropic(api_key=_key(provider), timeout=settings.LLM_TIMEOUT_SECONDS,
+                                          max_retries=_SDK_RETRIES)
+        response = await client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system=system,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return "".join(block.text for block in response.content if getattr(block, "type", "") == "text")
+
+    client = _openai_client(provider)
+    kwargs: Dict[str, Any] = {}
+    if json_mode and provider.json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+    response = await client.chat.completions.create(
+        model=model,
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+        temperature=temperature,
+        max_tokens=max_tokens,
+        **kwargs,
+    )
+    return response.choices[0].message.content or ""
+
+
+async def complete_with_model(
+    system: str,
+    prompt: str,
+    *,
+    max_tokens: int = 4000,
+    temperature: float = 0.7,
+    json_mode: bool = False,
+) -> Tuple[str, str]:
+    """Single-turn completion; returns (text, model that answered).
+
+    Tries the configured model, then the provider's fallbacks when a model is
+    overloaded, rate-limited or no longer available.
+    """
+    provider = _require_provider()
+    errors: List[str] = []
+    for model in _models_to_try(provider):
+        try:
+            text = await _call(provider, model, system, prompt, max_tokens, temperature, json_mode)
+            if errors:
+                logger.info("LLM answered with fallback model %s after: %s", model, "; ".join(errors))
+            return text, model
+        except Exception as e:  # SDK errors differ per provider; normalise them
+            status = getattr(e, "status_code", None)
+            errors.append(f"{model}: {e}")
+            if status not in _FALLBACK_STATUSES:
+                break
+            logger.warning("LLM model %s unavailable (HTTP %s), trying the next one", model, status)
+    raise LLMError(f"{provider.label} request failed: " + " | ".join(errors))
 
 
 async def complete_text(
@@ -143,38 +221,9 @@ async def complete_text(
     json_mode: bool = False,
 ) -> str:
     """Single-turn completion; returns the model's text."""
-    provider = _require_provider()
-    model = active_model(provider)
-    try:
-        if provider.name == "anthropic":
-            import anthropic
-
-            client = anthropic.AsyncAnthropic(api_key=_key(provider), timeout=settings.LLM_TIMEOUT_SECONDS)
-            response = await client.messages.create(
-                model=model,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                system=system,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            return "".join(block.text for block in response.content if getattr(block, "type", "") == "text")
-
-        client = _openai_client(provider)
-        kwargs: Dict[str, Any] = {}
-        if json_mode and provider.json_mode:
-            kwargs["response_format"] = {"type": "json_object"}
-        response = await client.chat.completions.create(
-            model=model,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
-            temperature=temperature,
-            max_tokens=max_tokens,
-            **kwargs,
-        )
-        return response.choices[0].message.content or ""
-    except LLMUnavailable:
-        raise
-    except Exception as e:  # SDK errors differ per provider; normalise them
-        raise LLMError(f"{provider.label} ({model}) request failed: {e}") from e
+    text, _ = await complete_with_model(system, prompt, max_tokens=max_tokens, temperature=temperature,
+                                        json_mode=json_mode)
+    return text
 
 
 def parse_json_object(text: str) -> Dict[str, Any]:

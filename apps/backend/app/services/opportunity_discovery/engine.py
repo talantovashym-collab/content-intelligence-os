@@ -256,6 +256,14 @@ class OpportunityDiscoveryEngine:
             for v in result:
                 videos.setdefault(v.url, v)
         if not videos:
+            # Both parallel searches failed (usually a slow network); one sequential retry
+            try:
+                for v in await search_youtube(niche, limit=20, sort="relevance", language=language):
+                    videos.setdefault(v.url, v)
+                warnings.clear()
+            except VideoSourceError as e:
+                warnings.append(f"Retry failed too: {e}")
+        if not videos:
             warnings.append("No YouTube results were found, so there is no market evidence behind these ideas.")
         return sorted(videos.values(), key=lambda v: v.views or 0, reverse=True), queries
 

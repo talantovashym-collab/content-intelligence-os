@@ -22,11 +22,13 @@ async def ai_test(current_user: User = Depends(get_current_user)):
     """Send one tiny request to the active provider to check the key and model work."""
     started = time.monotonic()
     try:
-        reply = await llm.complete_text(
-            "You are a connectivity check.", "Reply with the single word: ok", max_tokens=10, temperature=0
+        # Room for "thinking" models, which spend tokens before they answer
+        reply, model = await llm.complete_with_model(
+            "You are a connectivity check.", "Reply with the single word: ok", max_tokens=1000, temperature=0
         )
     except llm.LLMUnavailable as e:
         raise HTTPException(status_code=400, detail=str(e))
     except llm.LLMError as e:
         raise HTTPException(status_code=502, detail=str(e))
-    return {**llm.status(), "reply": reply.strip()[:100], "latency_ms": round((time.monotonic() - started) * 1000)}
+    return {**llm.status(), "model": model, "reply": reply.strip()[:100] or "(empty reply)",
+            "latency_ms": round((time.monotonic() - started) * 1000)}
