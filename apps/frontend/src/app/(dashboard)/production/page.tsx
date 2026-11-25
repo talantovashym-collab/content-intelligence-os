@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { ModuleTemplate } from '@/components/layout/module-template';
-import { Clapperboard, Zap, FileText, Image, Music, Scissors, Timeline, Plus, Play, CheckCircle, Loader2, Download, Eye, RefreshCw } from 'lucide-react';
+import { Clapperboard, Zap, FileText, Image, Music, Scissors, Plus, Play, CheckCircle, Loader2, Download, Eye, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -174,7 +174,8 @@ export default function ProductionPage() {
                     </span>
                     <span className="text-sm text-muted-foreground">v{prod.version}</span>
                   </div>
-                  <div className="flex items-center gap-4">
+                </div>
+                <div className="flex items-center gap-4">
                     {prod.status === 'rendering' && (
                       <div className="w-40">
                         <div className="h-2 bg-muted rounded-full overflow-hidden">

@@ -58,6 +58,8 @@ yarn-error.log*
 .next/
 out/
 build/
+next-env.d.ts
+*.tsbuildinfo
 
 # Turbo
 .turbo/
