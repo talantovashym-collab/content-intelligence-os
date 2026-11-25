@@ -1,137 +1,212 @@
 'use client';
 
-import React from 'react';
-import { ModuleTemplate } from '@/components/layout/module-template';
-import { Brain, Video, Search, Zap, Loader2, Eye, Mic, Music, Scissors, Layers, Target } from 'lucide-react';
+import React, { Suspense, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Brain, Loader2, Zap } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { cn } from '@/lib/utils';
+import { DataView } from '@/components/data-view';
+import { PageHeader } from '@/components/layout/page-header';
+import { InlineError, SourceNote } from '@/components/source-note';
+import { compactNumber, humanize, investigationsApi, referencesApi, type Investigation, type Project, type Reference } from '@/lib/api';
+import { ProjectGate } from '@/lib/project-context';
 
-interface AnalysisType {
-  id: string;
-  name: string;
-  description: string;
-  icon: React.ReactNode;
-  color: string;
-  status: 'ready' | 'planned';
-}
-
-const analysisTypes = [
-  { id: 'frame', name: 'Frame Extraction', description: 'Extract frames at configurable intervals with timestamps', icon: <Layers className="h-5 w-5" />, color: 'from-blue-500 to-cyan-500', status: 'ready' },
-  { id: 'scene', name: 'Scene Detection', description: 'Detect scene changes and transitions automatically', icon: <Scissors className="h-5 w-5" />, color: 'from-purple-500 to-pink-500', status: 'ready' },
-  { id: 'ocr', name: 'OCR Text Extraction', description: 'Extract text from frames using Tesseract OCR', icon: <Target className="h-5 w-5" />, color: 'from-indigo-500 to-blue-500', status: 'ready' },
-  { id: 'speech', name: 'Speech Transcription', description: 'Transcribe audio with Whisper (speaker diarization)', icon: <Mic className="h-5 w-5" />, color: 'from-green-500 to-emerald-500', status: 'ready' },
-  { id: 'creative', name: 'Creative Analysis', description: 'Hooks, storytelling, emotions, narrative, animation, editing', icon: <Brain className="h-5 w-5" />, color: 'from-rose-500 to-red-500', status: 'ready' },
-  { id: 'composition', name: 'Visual Composition', description: 'Camera angles, visual hierarchy, color, lighting analysis', icon: <Video className="h-5 w-5" />, color: 'from-amber-500 to-orange-500', status: 'planned' },
-  { id: 'objects', name: 'Object/Character Detection', description: 'Detect objects, characters, expressions in frames', icon: <Eye className="h-5 w-5" />, color: 'from-teal-500 to-cyan-500', status: 'planned' },
-  { id: 'audio', name: 'Music/SFX Analysis', description: 'Detect music, sound effects, rhythm patterns', icon: <Music className="h-5 w-5" />, color: 'from-purple-500 to-indigo-500', status: 'planned' },
-]
+const DEFAULT_TYPES = ['HOOKS', 'NARRATIVE_STRUCTURE', 'PACING', 'CTAS'];
 
 export default function InvestigationPage() {
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Investigation Studio</h1>
-          <p className="text-muted-foreground mt-1">
-            Deep frame-by-frame, audio, text, and creative technique analysis for your references
-          </p>
-        </div>
-        <Button variant="outline" size="sm">
-          <Zap className="h-4 w-4 mr-2" />
-          Batch Analyze
-        </Button>
-      </div>
+      <PageHeader icon={Brain} color="from-pink-500 to-rose-500" title="Investigation Studio"
+        description="Reverse-engineer why a reference video works: hooks, structure, pacing, persuasion" />
+      <ProjectGate>
+        {(project) => (
+          <Suspense>
+            <InvestigationWorkspace key={project.id} project={project} />
+          </Suspense>
+        )}
+      </ProjectGate>
+    </div>
+  );
+}
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {analysisTypes.map((analysis) => (
-          <Card key={analysis.id} className={cn('group hover:shadow-lg transition-all hover:border-primary/50 cursor-pointer', analysis.status === 'planned' && 'opacity-60')}>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className={cn('flex h-12 w-12 items-center justify-center rounded-xl', `bg-gradient-to-br ${analysis.color}`)}>
-                  {analysis.icon}
-                </div>
-                <span className={cn('text-xs px-2 py-1 rounded-full', analysis.status === 'ready' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800')}>
-                  {analysis.status.charAt(0).toUpperCase() + analysis.status.slice(1)}
-                </span>
-              </div>
-              <CardTitle className="text-lg">{analysis.name}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{analysis.description}</p>
-              <Button variant={analysis.status === 'ready' ? 'default' : 'outline'} className="w-full" size="sm">
-                {analysis.status === 'ready' ? 'Launch Analysis' : 'Coming Soon'}
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+/** "1:05" -> 65 */
+function toSeconds(ts?: string): number | null {
+  if (!ts) return null;
+  const parts = ts.split(':').map(Number);
+  if (parts.some(Number.isNaN)) return null;
+  return parts.reduce((acc, p) => acc * 60 + p, 0);
+}
 
-      {/* Reference Selector + Analysis Config */}
-      <Card className="mt-4">
+function atTime(url: string | null, ts?: string): string | null {
+  const s = toSeconds(ts);
+  if (!url || s === null || !/youtube\.com|youtu\.be/.test(url)) return null;
+  return `${url}${url.includes('?') ? '&' : '?'}t=${s}s`;
+}
+
+function InvestigationWorkspace({ project }: { project: Project }) {
+  const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const references = useQuery({ queryKey: ['references', project.id], queryFn: () => referencesApi.list(project.id) });
+  const types = useQuery({ queryKey: ['investigation-types', project.id], queryFn: () => investigationsApi.types(project.id), staleTime: Infinity });
+  const [referenceId, setReferenceId] = useState('');
+  const [selected, setSelected] = useState<string[]>(DEFAULT_TYPES);
+
+  useEffect(() => {
+    const refs = references.data?.references ?? [];
+    if (referenceId || refs.length === 0) return;
+    const wanted = searchParams.get('reference');
+    setReferenceId(refs.find((r) => r.id === wanted)?.id ?? refs[0].id);
+  }, [references.data, referenceId, searchParams]);
+
+  const reference = references.data?.references.find((r) => r.id === referenceId);
+  const investigations = useQuery({
+    queryKey: ['investigations', project.id, referenceId],
+    queryFn: () => investigationsApi.list(project.id, referenceId),
+    enabled: !!referenceId,
+  });
+  const run = useMutation({
+    mutationFn: () => investigationsApi.run(project.id, referenceId, selected),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['investigations', project.id] });
+      queryClient.invalidateQueries({ queryKey: ['references', project.id] });
+    },
+  });
+  const toggle = (t: string) => setSelected((cur) => (cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]));
+
+  if (references.isLoading) return <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />;
+  if (!references.data?.references.length) {
+    return (
+      <div className="rounded-lg border border-dashed p-8 text-center">
+        <p className="font-medium">Your reference library is empty</p>
+        <Link href="/research" className="mt-2 inline-block text-sm font-medium text-primary hover:underline">
+          Find videos in Reference Research
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <Card>
         <CardHeader>
-          <h2 className="text-xl font-bold">Run Analysis on Reference</h2>
+          <CardTitle className="text-xl">Run an investigation</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium mb-2">Select Reference</label>
-              <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose a reference from your library" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">How I Built a $10K/Month Side Hustle (YouTube)</SelectItem>
-                  <SelectItem value="2">The Psychology of Viral Content (TikTok)</SelectItem>
-                  <SelectItem value="3">Building Systems, Not Goals (YouTube)</SelectItem>
-                  <SelectItem value="4">Micro-Habits That Changed My Life (TikTok)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">Analysis Types</label>
-              <div className="space-y-2">
-                {[
-                  { id: 'frame', name: 'Frame Extraction', default: true },
-                  { id: 'scene', name: 'Scene Detection', default: true },
-                  { id: 'ocr', name: 'OCR Text Extraction', default: true },
-                  { id: 'speech', name: 'Speech Transcription', default: true },
-                  { id: 'creative', name: 'Creative Techniques', default: true },
-                ].map((opt) => (
-                  <label key={opt.id} className="flex items-center gap-2">
-                    <input type="checkbox" defaultChecked={opt.default} className="rounded border-input" />
-                    <span className="text-sm">{opt.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">Frame Extraction Config</label>
-              <div className="grid gap-2 sm:grid-cols-3">
-                <Input placeholder="Interval (seconds)" type="number" defaultValue="5" />
-                <Input placeholder="Max Frames" type="number" defaultValue="300" />
-                <Select>
-                  <SelectTrigger><SelectValue>jpg</SelectValue></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="jpg">JPG</SelectItem>
-                    <SelectItem value="png">PNG</SelectItem>
-                    <SelectItem value="webp">WebP</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+        <CardContent className="space-y-4">
+          <div>
+            <label htmlFor="reference" className="mb-1.5 block text-sm font-medium">Reference video</label>
+            <select id="reference" value={referenceId} onChange={(e) => { setReferenceId(e.target.value); run.reset(); }}
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+              {references.data.references.map((r) => (
+                <option key={r.id} value={r.id}>{r.title} ({compactNumber(r.engagement_metrics?.views)} views)</option>
+              ))}
+            </select>
+            {reference && !reference.reference_metadata?.transcript && (
+              <p className="mt-1.5 text-xs text-amber-700">
+                This video has no captions, so analyses rely on its title, description and stats only.
+              </p>
+            )}
           </div>
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button variant="outline">Cancel</Button>
-            <Button size="lg">
-              <Zap className="h-4 w-4 mr-2" />
-              Start Analysis
-            </Button>
-          </div>
+          <fieldset>
+            <legend className="mb-1.5 block text-sm font-medium">Analyses</legend>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {types.data?.map((t) => (
+                <label key={t.type} className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" className="mt-0.5 rounded border-input" checked={selected.includes(t.type)} onChange={() => toggle(t.type)} />
+                  <span><span className="font-medium">{humanize(t.type)}</span><span className="block text-xs text-muted-foreground">{t.description}</span></span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <InlineError error={run.error} />
+          <Button size="lg" className="w-full" onClick={() => run.mutate()} disabled={run.isPending || !referenceId || selected.length === 0}>
+            {run.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
+            {run.isPending ? 'Analysing…' : `Run ${selected.length} ${selected.length === 1 ? 'analysis' : 'analyses'}`}
+          </Button>
+          {run.data && <SourceNote source={run.data.source} warnings={[run.data.warning]} />}
         </CardContent>
       </Card>
-    </div>
+
+      {reference && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-xl">Findings for “{reference.title}”</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {investigations.isLoading && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
+            {investigations.data?.investigations.length === 0 && (
+              <p className="py-6 text-center text-muted-foreground">No analyses yet for this video.</p>
+            )}
+            {investigations.data?.investigations.map((i) => <InvestigationCard key={i.id} investigation={i} reference={reference} />)}
+            <Transcript reference={reference} />
+          </CardContent>
+        </Card>
+      )}
+    </>
+  );
+}
+
+function InvestigationCard({ investigation: i, reference }: { investigation: Investigation; reference: Reference }) {
+  const evidence = i.evidence?.items ?? [];
+  const applications = i.creative_applications?.items ?? [];
+  return (
+    <details className="rounded-lg border p-3" open>
+      <summary className="flex cursor-pointer flex-wrap items-center gap-2">
+        <span className="font-semibold">{humanize(i.analysis_type)}</span>
+        <span className="text-xs text-muted-foreground">confidence {Math.round(i.confidence_level * 100)}%</span>
+        {i.interpretations?.source === 'template' && <span className="rounded bg-muted px-2 py-0.5 text-xs">measured only</span>}
+      </summary>
+      <div className="mt-3 space-y-3">
+        {i.interpretations?.text && <p className="text-sm">{i.interpretations.text}</p>}
+        <DataView value={i.findings} />
+        {evidence.length > 0 && (
+          <div>
+            <p className="text-xs font-medium text-muted-foreground">Evidence</p>
+            <ul className="mt-1 space-y-1 text-sm">
+              {evidence.map((e, n) => {
+                const href = atTime(reference.source_url, e.timestamp);
+                return (
+                  <li key={n} className="flex gap-2">
+                    {href ? (
+                      <a href={href} target="_blank" rel="noreferrer" className="shrink-0 font-mono text-xs text-primary hover:underline">{e.timestamp}</a>
+                    ) : (
+                      <span className="shrink-0 font-mono text-xs text-muted-foreground">{e.timestamp ?? '–'}</span>
+                    )}
+                    <span>“{e.quote}”</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+        {applications.length > 0 && (
+          <div>
+            <p className="text-xs font-medium text-muted-foreground">Use it in your own video</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm">{applications.map((a) => <li key={a}>{a}</li>)}</ul>
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function Transcript({ reference }: { reference: Reference }) {
+  const segments = reference.reference_metadata?.transcript?.segments ?? [];
+  if (!segments.length) return null;
+  return (
+    <details className="rounded-lg border p-3">
+      <summary className="cursor-pointer text-sm font-semibold">Transcript ({segments.length} lines)</summary>
+      <div className="mt-2 max-h-80 space-y-0.5 overflow-y-auto text-sm">
+        {segments.map((s, n) => (
+          <p key={n}>
+            <span className="mr-2 font-mono text-xs text-muted-foreground">
+              {Math.floor(s.start / 60)}:{String(Math.floor(s.start % 60)).padStart(2, '0')}
+            </span>
+            {s.text}
+          </p>
+        ))}
+      </div>
+    </details>
   );
 }

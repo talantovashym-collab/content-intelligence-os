@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, CheckCircle, ChevronDown, Loader2, Palette, Trash2, XCircle, Zap } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,7 +11,9 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { DataView, isEmpty } from '@/components/data-view';
 import { cn } from '@/lib/utils';
-import { PLATFORMS, PLATFORM_LABELS, humanize, strategiesApi, type Project, type Strategy } from '@/lib/api';
+import {
+  PLATFORMS, PLATFORM_LABELS, humanize, opportunitiesApi, strategiesApi, type Opportunity, type Project, type Strategy,
+} from '@/lib/api';
 import { ProjectGate } from '@/lib/project-context';
 
 export default function StrategyPage() {
@@ -27,7 +30,14 @@ export default function StrategyPage() {
           </p>
         </div>
       </div>
-      <ProjectGate>{(project) => <StrategyWorkspace key={project.id} project={project} />}</ProjectGate>
+      <ProjectGate>
+        {(project) => (
+          // StrategyWorkspace reads ?opportunity=, which needs a Suspense boundary
+          <Suspense>
+            <StrategyWorkspace key={project.id} project={project} />
+          </Suspense>
+        )}
+      </ProjectGate>
     </div>
   );
 }
@@ -37,10 +47,22 @@ function StrategyWorkspace({ project }: { project: Project }) {
     queryKey: ['strategies', project.id],
     queryFn: () => strategiesApi.list(project.id),
   });
+  // "Create strategy" on an opportunity or idea links here with ?opportunity=<id>
+  const opportunityId = useSearchParams().get('opportunity');
+  const opportunities = useQuery({
+    queryKey: ['opportunities', project.id, 'all'],
+    queryFn: () => opportunitiesApi.list(project.id),
+    enabled: !!opportunityId,
+  });
+  const prefill = opportunities.data?.opportunities.find((o) => o.id === opportunityId);
 
   return (
     <>
-      <StrategyForm project={project} />
+      {opportunityId && opportunities.isLoading ? (
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      ) : (
+        <StrategyForm key={prefill?.id ?? 'blank'} project={project} prefill={prefill} />
+      )}
       <Card>
         <CardHeader>
           <CardTitle className="text-xl">
@@ -63,14 +85,16 @@ function StrategyWorkspace({ project }: { project: Project }) {
   );
 }
 
-function StrategyForm({ project }: { project: Project }) {
+function StrategyForm({ project, prefill }: { project: Project; prefill?: Opportunity }) {
   const queryClient = useQueryClient();
-  const [topic, setTopic] = useState('');
-  const [concept, setConcept] = useState('');
-  const [audience, setAudience] = useState(project.target_audience ?? '');
+  const [topic, setTopic] = useState(prefill?.title.slice(0, 200) ?? '');
+  const [concept, setConcept] = useState(
+    prefill ? [prefill.topic_description, prefill.audience_need].filter(Boolean).join('\n\n').slice(0, 5000) : '',
+  );
+  const [audience, setAudience] = useState(prefill?.target_audience ?? project.target_audience ?? '');
   const [duration, setDuration] = useState('60');
   const [tone, setTone] = useState('engaging');
-  const [format, setFormat] = useState('educational');
+  const [format, setFormat] = useState(prefill?.creative_formats[0]?.toLowerCase() ?? 'educational');
   const [platforms, setPlatforms] = useState<string[]>(() =>
     project.platforms.length ? project.platforms.map((p) => p.toLowerCase()) : ['youtube']
   );
@@ -100,6 +124,7 @@ function StrategyForm({ project }: { project: Project }) {
     <Card>
       <CardHeader>
         <CardTitle className="text-xl">Generate a strategy</CardTitle>
+        {prefill && <p className="text-sm text-muted-foreground">Pre-filled from “{prefill.title}”.</p>}
       </CardHeader>
       <CardContent>
         <form

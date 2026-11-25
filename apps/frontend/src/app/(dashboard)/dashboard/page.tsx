@@ -20,7 +20,7 @@ const modules = [
     icon: Search,
     color: 'from-blue-500 to-cyan-500',
     href: '/discover',
-    status: 'preview',
+    status: 'live',
   },
   {
     id: 'ideas',
@@ -29,7 +29,7 @@ const modules = [
     icon: Lightbulb,
     color: 'from-amber-500 to-orange-500',
     href: '/ideas',
-    status: 'preview',
+    status: 'live',
   },
   {
     id: 'research',
@@ -38,7 +38,7 @@ const modules = [
     icon: Video,
     color: 'from-purple-500 to-pink-500',
     href: '/research',
-    status: 'preview',
+    status: 'live',
   },
   {
     id: 'investigation',
@@ -47,7 +47,7 @@ const modules = [
     icon: Brain,
     color: 'from-pink-500 to-rose-500',
     href: '/investigation',
-    status: 'preview',
+    status: 'live',
   },
   {
     id: 'intelligence',
@@ -56,7 +56,7 @@ const modules = [
     icon: Target,
     color: 'from-rose-500 to-red-500',
     href: '/intelligence',
-    status: 'preview',
+    status: 'live',
   },
   {
     id: 'strategy',
@@ -83,7 +83,7 @@ const modules = [
     icon: FlaskConical,
     color: 'from-yellow-500 to-lime-500',
     href: '/testing',
-    status: 'planned',
+    status: 'live',
   },
   {
     id: 'publishing',
@@ -92,7 +92,7 @@ const modules = [
     icon: Globe,
     color: 'from-lime-500 to-green-500',
     href: '/publishing',
-    status: 'planned',
+    status: 'live',
   },
   {
     id: 'analytics',
@@ -101,7 +101,7 @@ const modules = [
     icon: BarChart,
     color: 'from-green-500 to-emerald-500',
     href: '/analytics',
-    status: 'planned',
+    status: 'live',
   },
   {
     id: 'knowledge',
@@ -110,7 +110,7 @@ const modules = [
     icon: BookOpen,
     color: 'from-emerald-500 to-teal-500',
     href: '/knowledge',
-    status: 'planned',
+    status: 'live',
   },
 ];
 
@@ -206,7 +206,7 @@ export default function DashboardPage() {
       <div>
         <h2 className="text-2xl font-bold mb-4">Content Production Pipeline</h2>
         <p className="text-muted-foreground mb-6">
-          Live modules save to your account. Sample-data modules are interface previews that are not connected yet.
+          Each module saves its work to the selected project and feeds the next step.
         </p>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
