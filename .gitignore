@@ -75,9 +75,6 @@ logs/
 storage/
 uploads/
 
-# Prisma
-prisma/migrations/
-
 # Celery
 celerybeat-schedule
 celerybeat.pid

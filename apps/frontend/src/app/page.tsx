@@ -336,7 +336,7 @@ export default function HomePage() {
             {[
               { name: 'Frontend', items: ['Next.js 14', 'React 18', 'TypeScript', 'Tailwind CSS', 'Radix UI', 'TanStack Query'] },
               { name: 'Backend', items: ['FastAPI', 'Python 3.11', 'SQLAlchemy 2.0', 'Pydantic v2', 'Celery', 'Redis'] },
-              { name: 'Database', items: ['PostgreSQL', 'pgvector', 'Prisma ORM', 'Alembic', 'AsyncPG'] },
+              { name: 'Database', items: ['PostgreSQL', 'pgvector', 'SQLAlchemy', 'Alembic', 'AsyncPG'] },
               { name: 'AI & Media', items: ['OpenAI', 'Anthropic', 'Gemini', 'ElevenLabs', 'FFmpeg', 'Whisper', 'OpenCV'] },
             ].map((stack) => (
               <Card key={stack.name}>

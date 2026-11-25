@@ -13,8 +13,7 @@ content-intelligence-os/
 │   ├── frontend/          # Next.js 14 + React 18 + TypeScript + Tailwind
 │   └── backend/           # FastAPI + Python 3.11 + SQLAlchemy 2.0
 ├── packages/
-│   ├── shared/            # Shared TypeScript types & Zod schemas
-│   └── db/                # Prisma schema & migrations
+│   └── shared/            # Shared TypeScript types & Zod schemas
 ├── docker-compose.yml     # Local development stack
 └── .env.example           # Environment configuration template
 ```
@@ -25,7 +24,7 @@ content-intelligence-os/
 |-------|------------|
 | Frontend | Next.js 14, React 18, TypeScript, Tailwind CSS, Radix UI, TanStack Query |
 | Backend | FastAPI, Python 3.11, SQLAlchemy 2.0, Pydantic v2, Celery, Redis |
-| Database | PostgreSQL 16 + pgvector, Prisma ORM, Alembic migrations |
+| Database | PostgreSQL 16 + pgvector, SQLAlchemy models, Alembic migrations |
 | AI Providers | OpenAI, Anthropic, Google Gemini, ElevenLabs |
 | Media Processing | FFmpeg, Whisper, OpenCV, scenedetect, MoviePy |
 | Infrastructure | Docker Compose, Prometheus, Sentry |
@@ -70,16 +69,15 @@ cd apps/backend
 python -m app.db.migrate    # upgrade to head (stamps pre-Alembic dev DBs first)
 ```
 
-> Do not run `prisma migrate` or `prisma db push` against this database: the
-> Prisma schema in `packages/db` does not match the real tables (UUID ids,
-> snake_case columns) and Prisma would try to reset it.
+To change the schema, edit the SQLAlchemy models in `apps/backend/app/models/`,
+then generate a migration with `alembic revision --autogenerate -m "..."`
+and review it before committing.
 
 ### 4. Access the Application
 
 - **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:8000
 - **API Docs**: http://localhost:8000/api/v1/docs
-- **Prisma Studio**: `cd packages/db && npm run db:studio`
 
 ## Project Structure
 
