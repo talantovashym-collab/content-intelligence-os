@@ -1,6 +1,6 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
 
@@ -9,13 +9,28 @@ from app.models.strategy import CreativeStrategy
 from app.models.project import Project
 from app.api.v1.endpoints.auth import get_current_user
 from app.models.user import User
-from pydantic import BaseModel
+from app.services.creative_strategy.service import CreativeStrategyService
+from app.services.creative_strategy.schemas import CreativeStrategyGenerationRequest
+from pydantic import AliasChoices, BaseModel, Field
 from datetime import datetime
 
 router = APIRouter()
 
 
-class CreativeStrategyBase(BaseModel):
+class StrategyGenerationRequestAPI(BaseModel):
+    concept: str = Field(..., min_length=10, max_length=5000)
+    topic: str = Field(..., min_length=3, max_length=200)
+    target_audience: str = Field(..., min_length=10, max_length=2000)
+    research_context: Optional[dict] = None
+    reference_dna: Optional[dict] = None
+    platform_targets: List[str] = Field(default_factory=lambda: ["youtube", "tiktok", "instagram"])
+    duration_preference: int = Field(60, ge=5, le=3600)
+    tone: str = "engaging"
+    format_preference: str = "educational"
+
+
+class StrategyGenerationResponseAPI(BaseModel):
+    strategy_id: uuid.UUID = Field(validation_alias=AliasChoices("strategy_id", "id"))
     concept: str
     topic: str
     target_audience: str
@@ -27,19 +42,25 @@ class CreativeStrategyBase(BaseModel):
     visual_style: str
     animation_style: str
     duration: int
-    platform_adaptations: dict = {}
+    platform_adaptations: dict
     differentiation: str
-    alternatives: dict = {}
+    alternatives: dict
+    is_approved: bool
+    approved_at: Optional[datetime] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
-class CreativeStrategyCreate(CreativeStrategyBase):
-    pass
+class StrategyListResponse(BaseModel):
+    strategies: List[StrategyGenerationResponseAPI]
+    total: int
+    page: int
+    page_size: int
 
 
-class CreativeStrategyUpdate(BaseModel):
-    concept: Optional[str] = None
-    topic: Optional[str] = None
-    target_audience: Optional[str] = None
+class StrategyUpdateAPI(BaseModel):
     creative_angle: Optional[str] = None
     core_message: Optional[str] = None
     emotional_objective: Optional[str] = None
@@ -47,39 +68,44 @@ class CreativeStrategyUpdate(BaseModel):
     narrative_formula: Optional[str] = None
     visual_style: Optional[str] = None
     animation_style: Optional[str] = None
-    duration: Optional[int] = None
+    duration: Optional[int] = Field(None, ge=5, le=3600)
     platform_adaptations: Optional[dict] = None
     differentiation: Optional[str] = None
     alternatives: Optional[dict] = None
-    is_approved: Optional[bool] = None
 
 
-class CreativeStrategyResponse(CreativeStrategyBase):
-    id: uuid.UUID
-    project_id: uuid.UUID
-    is_approved: bool
-    approved_at: Optional[datetime]
-    created_at: datetime
-    updated_at: datetime
+async def _get_owned_strategy(
+    db: AsyncSession, project_id: uuid.UUID, strategy_id: uuid.UUID, user: User
+) -> CreativeStrategy:
+    """Fetch a strategy that belongs to project_id AND a project owned by user."""
+    result = await db.execute(
+        select(CreativeStrategy)
+        .join(Project, CreativeStrategy.project_id == Project.id)
+        .where(
+            CreativeStrategy.id == strategy_id,
+            CreativeStrategy.project_id == project_id,
+            Project.user_id == user.id,
+        )
+    )
+    strategy = result.scalar_one_or_none()
+    if not strategy:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    return strategy
 
-    class Config:
-        from_attributes = True
+
+class StrategyApprovalRequestAPI(BaseModel):
+    approved: bool
+    feedback: Optional[str] = None
 
 
-class CreativeStrategyListResponse(BaseModel):
-    strategies: List[CreativeStrategyResponse]
-    total: int
-    page: int
-    page_size: int
-
-
-@router.post("/{project_id}/strategies", response_model=CreativeStrategyResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/{project_id}/strategies", response_model=StrategyGenerationResponseAPI, status_code=status.HTTP_201_CREATED)
 async def create_strategy(
     project_id: uuid.UUID,
-    strategy_data: CreativeStrategyCreate,
+    strategy_data: StrategyGenerationRequestAPI,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Verify project ownership
     result = await db.execute(
         select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
     )
@@ -87,17 +113,18 @@ async def create_strategy(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    strategy = CreativeStrategy(
+    # Create service and generate strategy
+    service = CreativeStrategyService(db)
+    request = CreativeStrategyGenerationRequest(
         project_id=project_id,
         **strategy_data.model_dump(),
     )
-    db.add(strategy)
-    await db.commit()
-    await db.refresh(strategy)
-    return strategy
+
+    response = await service.generate_strategy(request)
+    return response
 
 
-@router.get("/{project_id}/strategies", response_model=CreativeStrategyListResponse)
+@router.get("/{project_id}/strategies", response_model=StrategyListResponse)
 async def list_strategies(
     project_id: uuid.UUID,
     page: int = Query(1, ge=1),
@@ -112,23 +139,18 @@ async def list_strategies(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    query = select(CreativeStrategy).where(CreativeStrategy.project_id == project_id)
-    count_query = select(func.count()).select_from(query.subquery())
-    total = await db.scalar(count_query)
+    service = CreativeStrategyService(db)
+    strategies, total = await service.list_strategies(project_id, page, page_size)
 
-    query = query.order_by(CreativeStrategy.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
-    result = await db.execute(query)
-    strategies = result.scalars().all()
-
-    return CreativeStrategyListResponse(
-        strategies=strategies,
+    return StrategyListResponse(
+        strategies=[StrategyGenerationResponseAPI.model_validate(s) for s in strategies],
         total=total,
         page=page,
         page_size=page_size,
     )
 
 
-@router.get("/{project_id}/strategies/{strategy_id}", response_model=CreativeStrategyResponse)
+@router.get("/{project_id}/strategies/{strategy_id}", response_model=StrategyGenerationResponseAPI)
 async def get_strategy(
     project_id: uuid.UUID,
     strategy_id: uuid.UUID,
@@ -136,38 +158,64 @@ async def get_strategy(
     current_user: User = Depends(get_current_user),
 ):
     result = await db.execute(
-        select(CreativeStrategy)
-        .where(CreativeStrategy.id == strategy_id, CreativeStrategy.project_id == project_id)
+        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
     )
-    strategy = result.scalar_one_or_none()
-    if not strategy:
+    project = result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    service = CreativeStrategyService(db)
+    strategy = await service.get_strategy(strategy_id)
+    if not strategy or strategy.project_id != project_id:
         raise HTTPException(status_code=404, detail="Strategy not found")
-    return strategy
+
+    return StrategyGenerationResponseAPI.model_validate(strategy)
 
 
-@router.patch("/{project_id}/strategies/{strategy_id}", response_model=CreativeStrategyResponse)
-async def update_strategy(
+@router.patch("/{project_id}/strategies/{strategy_id}/approve", response_model=StrategyGenerationResponseAPI)
+async def approve_strategy(
     project_id: uuid.UUID,
     strategy_id: uuid.UUID,
-    strategy_data: CreativeStrategyUpdate,
+    approval_data: StrategyApprovalRequestAPI,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     result = await db.execute(
-        select(CreativeStrategy)
-        .where(CreativeStrategy.id == strategy_id, CreativeStrategy.project_id == project_id)
+        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
     )
-    strategy = result.scalar_one_or_none()
-    if not strategy:
+    project = result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    service = CreativeStrategyService(db)
+    existing = await service.get_strategy(strategy_id)
+    if not existing or existing.project_id != project_id:
         raise HTTPException(status_code=404, detail="Strategy not found")
 
+    strategy = await service.approve_strategy(strategy_id, approval_data.approved, approval_data.feedback)
+    return StrategyGenerationResponseAPI.model_validate(strategy)
+
+
+@router.patch("/{project_id}/strategies/{strategy_id}", response_model=StrategyGenerationResponseAPI)
+async def update_strategy(
+    project_id: uuid.UUID,
+    strategy_id: uuid.UUID,
+    strategy_data: StrategyUpdateAPI,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Edit a strategy's creative fields. Editing an approved strategy revokes approval."""
+    strategy = await _get_owned_strategy(db, project_id, strategy_id, current_user)
     update_data = strategy_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(strategy, field, value)
+    if update_data and strategy.is_approved:
+        strategy.is_approved = False
+        strategy.approved_at = None
 
     await db.commit()
     await db.refresh(strategy)
-    return strategy
+    return StrategyGenerationResponseAPI.model_validate(strategy)
 
 
 @router.delete("/{project_id}/strategies/{strategy_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -177,13 +225,6 @@ async def delete_strategy(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(CreativeStrategy)
-        .where(CreativeStrategy.id == strategy_id, CreativeStrategy.project_id == project_id)
-    )
-    strategy = result.scalar_one_or_none()
-    if not strategy:
-        raise HTTPException(status_code=404, detail="Strategy not found")
-
+    strategy = await _get_owned_strategy(db, project_id, strategy_id, current_user)
     await db.delete(strategy)
     await db.commit()

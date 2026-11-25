@@ -148,7 +148,7 @@ export default function IntelligencePage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Palettte className="h-5 w-5 text-primary" />
+                <Palette className="h-5 w-5 text-primary" />
                 Style Profile
               </CardTitle>
             </CardHeader>

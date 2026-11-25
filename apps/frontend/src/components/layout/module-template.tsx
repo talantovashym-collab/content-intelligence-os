@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, Zap, Loader2 } from 'lucide-react';
@@ -82,12 +83,12 @@ export function ModuleTemplate({
 
         {ctaText && ctaHref && (
           <div className="flex justify-end">
-            <a href={ctaHref}>
-              <Button size="lg">
+            <Button size="lg" asChild>
+              <Link href={ctaHref}>
                 <Zap className="h-4 w-4 mr-2" />
                 {ctaText}
-              </Button>
-            </a>
+              </Link>
+            </Button>
           </div>
         )}
       </div>

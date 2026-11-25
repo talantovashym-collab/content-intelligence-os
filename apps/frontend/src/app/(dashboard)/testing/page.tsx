@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { ModuleTemplate } from '@/components/layout/module-template';
-import { FlaskConical, Zap, BarChart, ArrowRight, CheckCircle, XCircle, Plus, Loader2 } from 'lucide-react';
+import { FlaskConical, Zap, BarChart, ArrowRight, CheckCircle, XCircle, Plus, Loader2, Eye } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -187,7 +187,8 @@ export default function TestingPage() {
                     </span>
                     {test.winner && <span className="text-xs px-2 py-1 bg-green-100 text-green-800">Winner: {test.winner}</span>}
                   </div>
-                  <div className="flex items-center gap-4">
+                </div>
+                <div className="flex items-center gap-4">
                     {test.status === 'running' && (
                       <div className="w-40">
                         <div className="h-2 bg-muted rounded-full overflow-hidden">

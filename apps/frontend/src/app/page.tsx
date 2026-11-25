@@ -23,6 +23,7 @@ import {
   Menu,
   X,
   ChevronDown,
+  CheckCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -246,7 +247,7 @@ export default function HomePage() {
                     {entry.features.map((feature, i) => (
                       <li key={i} className="flex items-center gap-2 text-sm">
                         <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10">
-                          <Check className="h-3 w-3 text-primary" />
+                          <CheckCheck className="h-3 w-3 text-primary" />
                         </div>
                         <span>{feature}</span>
                       </li>

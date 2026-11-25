@@ -167,9 +167,9 @@ export default function LibraryPage() {
                 <Button variant="outline" size="sm" className="flex-1">Open</Button>
                 <Button variant="ghost" size="sm"><MoreHorizontal className="h-4 w-4" /></Button>
               </div>
-            </Card>
-          ))}
-        </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
     </div>
   );
