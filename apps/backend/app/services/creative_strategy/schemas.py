@@ -66,5 +66,6 @@ class StrategyGenerationOptions(BaseModel):
     use_openai: bool = True
     use_anthropic: bool = True
     llm_model: str = "gpt-4o"
+    anthropic_model: str = "claude-sonnet-5-5"
     temperature: float = 0.7
     max_tokens: int = 4000

@@ -9,7 +9,7 @@ import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.models.strategy import CreativeStrategy
 from app.models.project import Project
@@ -122,9 +122,9 @@ class CreativeStrategyService:
         context["investigations"] = [
             {
                 "id": str(inv.id),
-                "type": inv.analysis_type,
+                "type": getattr(inv.analysis_type, "value", inv.analysis_type),
                 "findings": inv.findings,
-                "confidence": inv.confidence_score,
+                "confidence": inv.confidence_level,
             }
             for inv in investigations
         ]
@@ -140,7 +140,8 @@ class CreativeStrategyService:
         context["knowledge_entries"] = [
             {
                 "id": str(k.id),
-                "type": k.entry_type,
+                "type": k.category,
+                "title": k.title,
                 "content": k.content,
                 "tags": k.tags,
             }
@@ -160,14 +161,18 @@ class CreativeStrategyService:
         # Build comprehensive prompt
         prompt = self._build_strategy_prompt(request, research_data)
 
-        # Try AI generation
-        try:
-            if options.use_openai:
-                return await self._generate_with_openai(prompt, options)
-            elif options.use_anthropic:
-                return await self._generate_with_anthropic(prompt, options)
-        except Exception as e:
-            logger.warning(f"AI generation failed, using template fallback: {e}")
+        # Try each enabled provider in turn; fall back to templates only if all fail
+        providers = []
+        if options.use_openai:
+            providers.append(("openai", self._generate_with_openai))
+        if options.use_anthropic:
+            providers.append(("anthropic", self._generate_with_anthropic))
+        for name, generate in providers:
+            try:
+                return await generate(prompt, options)
+            except Exception as e:
+                logger.warning(f"{name} strategy generation failed: {e}")
+        logger.warning("All AI providers failed or unavailable, using template fallback")
 
         # Fallback to template-based generation
         return self._generate_template_strategy(request, research_data)
@@ -211,7 +216,7 @@ class CreativeStrategyService:
         if research_data.get("knowledge_entries"):
             prompt_parts.append(f"Knowledge Base:")
             for k in research_data["knowledge_entries"][:10]:
-                prompt_parts.append(f"  - {k['type']}: {k['content'][:500]}")
+                prompt_parts.append(f"  - {k['type']} / {k['title']}: {json.dumps(k['content'])[:500]}")
 
         prompt_parts.extend([
             f"",
@@ -280,14 +285,19 @@ class CreativeStrategyService:
             client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
             response = await client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model=options.anthropic_model,
                 max_tokens=options.max_tokens,
                 temperature=options.temperature,
                 system="You are an expert creative strategist for viral content. Generate detailed, actionable creative strategies in JSON format.",
                 messages=[{"role": "user", "content": prompt}],
             )
 
-            result = json.loads(response.content[0].text)
+            text = response.content[0].text
+            # Claude may wrap the JSON in prose or a code fence; take the outermost object
+            start, end = text.find("{"), text.rfind("}")
+            if start == -1 or end <= start:
+                raise ValueError("Anthropic response contained no JSON object")
+            result = json.loads(text[start:end + 1])
             return CreativeStrategyDraft(**result)
 
         except Exception as e:
@@ -418,11 +428,15 @@ class CreativeStrategyService:
         )
         return result.scalar_one_or_none()
 
-    async def list_strategies(self, project_id: uuid.UUID) -> List[CreativeStrategy]:
-        """List all strategies for a project."""
+    async def list_strategies(
+        self, project_id: uuid.UUID, page: int = 1, page_size: int = 20
+    ) -> tuple[List[CreativeStrategy], int]:
+        """List a page of strategies for a project, plus the total count."""
+        query = select(CreativeStrategy).where(CreativeStrategy.project_id == project_id)
+        total = await self.db.scalar(select(func.count()).select_from(query.subquery()))
         result = await self.db.execute(
-            select(CreativeStrategy)
-            .where(CreativeStrategy.project_id == project_id)
-            .order_by(CreativeStrategy.created_at.desc())
+            query.order_by(CreativeStrategy.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
         )
-        return result.scalars().all()
+        return list(result.scalars().all()), total or 0

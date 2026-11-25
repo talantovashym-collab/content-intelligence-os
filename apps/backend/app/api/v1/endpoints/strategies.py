@@ -60,6 +60,39 @@ class StrategyListResponse(BaseModel):
     page_size: int
 
 
+class StrategyUpdateAPI(BaseModel):
+    creative_angle: Optional[str] = None
+    core_message: Optional[str] = None
+    emotional_objective: Optional[str] = None
+    hook_direction: Optional[str] = None
+    narrative_formula: Optional[str] = None
+    visual_style: Optional[str] = None
+    animation_style: Optional[str] = None
+    duration: Optional[int] = Field(None, ge=5, le=3600)
+    platform_adaptations: Optional[dict] = None
+    differentiation: Optional[str] = None
+    alternatives: Optional[dict] = None
+
+
+async def _get_owned_strategy(
+    db: AsyncSession, project_id: uuid.UUID, strategy_id: uuid.UUID, user: User
+) -> CreativeStrategy:
+    """Fetch a strategy that belongs to project_id AND a project owned by user."""
+    result = await db.execute(
+        select(CreativeStrategy)
+        .join(Project, CreativeStrategy.project_id == Project.id)
+        .where(
+            CreativeStrategy.id == strategy_id,
+            CreativeStrategy.project_id == project_id,
+            Project.user_id == user.id,
+        )
+    )
+    strategy = result.scalar_one_or_none()
+    if not strategy:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    return strategy
+
+
 class StrategyApprovalRequestAPI(BaseModel):
     approved: bool
     feedback: Optional[str] = None
@@ -107,16 +140,10 @@ async def list_strategies(
         raise HTTPException(status_code=404, detail="Project not found")
 
     service = CreativeStrategyService(db)
-    strategies = await service.list_strategies(project_id)
-
-    # Paginate manually
-    total = len(strategies)
-    start = (page - 1) * page_size
-    end = start + page_size
-    paginated = strategies[start:end]
+    strategies, total = await service.list_strategies(project_id, page, page_size)
 
     return StrategyListResponse(
-        strategies=[StrategyGenerationResponseAPI.model_validate(s) for s in paginated],
+        strategies=[StrategyGenerationResponseAPI.model_validate(s) for s in strategies],
         total=total,
         page=page,
         page_size=page_size,
@@ -169,6 +196,28 @@ async def approve_strategy(
     return StrategyGenerationResponseAPI.model_validate(strategy)
 
 
+@router.patch("/{project_id}/strategies/{strategy_id}", response_model=StrategyGenerationResponseAPI)
+async def update_strategy(
+    project_id: uuid.UUID,
+    strategy_id: uuid.UUID,
+    strategy_data: StrategyUpdateAPI,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Edit a strategy's creative fields. Editing an approved strategy revokes approval."""
+    strategy = await _get_owned_strategy(db, project_id, strategy_id, current_user)
+    update_data = strategy_data.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(strategy, field, value)
+    if update_data and strategy.is_approved:
+        strategy.is_approved = False
+        strategy.approved_at = None
+
+    await db.commit()
+    await db.refresh(strategy)
+    return StrategyGenerationResponseAPI.model_validate(strategy)
+
+
 @router.delete("/{project_id}/strategies/{strategy_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_strategy(
     project_id: uuid.UUID,
@@ -176,18 +225,6 @@ async def delete_strategy(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(CreativeStrategy)
-        .join(Project, CreativeStrategy.project_id == Project.id)
-        .where(
-            CreativeStrategy.id == strategy_id,
-            CreativeStrategy.project_id == project_id,
-            Project.user_id == current_user.id,
-        )
-    )
-    strategy = result.scalar_one_or_none()
-    if not strategy:
-        raise HTTPException(status_code=404, detail="Strategy not found")
-
+    strategy = await _get_owned_strategy(db, project_id, strategy_id, current_user)
     await db.delete(strategy)
     await db.commit()

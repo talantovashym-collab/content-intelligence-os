@@ -656,6 +656,15 @@ class ProductionStudioService:
             "visual_prompts": production.visual_prompts,
             "timeline": production.timeline,
         }
+        if include_assets:
+            export_data.update({
+                "image_assets": production.image_assets,
+                "video_assets": production.video_assets,
+                "sound_design": production.sound_design,
+                "music_direction": production.music_direction,
+                "captions": production.captions,
+                "subtitles": production.subtitles,
+            })
 
         if export_format == "remotion":
             export_data = self._convert_to_remotion(export_data)

@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -99,6 +99,9 @@ class ProductionQueueItemResponse(BaseModel):
 class ProductionExportRequest(BaseModel):
     export_format: str = "json"
     include_assets: bool = True
+
+
+ProductionStatus = Literal["draft", "queued", "rendering", "review", "completed", "failed", "archived"]
 
 
 class ProductionAssetGenerateRequest(BaseModel):
@@ -251,7 +254,7 @@ async def update_production(
 async def update_production_status(
     project_id: uuid.UUID,
     production_id: uuid.UUID,
-    new_status: str = Query(..., alias="status", min_length=1, max_length=50),
+    new_status: ProductionStatus = Query(..., alias="status"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
