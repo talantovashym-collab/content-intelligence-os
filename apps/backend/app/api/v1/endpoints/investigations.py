@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
@@ -7,8 +7,8 @@ import uuid
 from app.db.session import get_db
 from app.models.investigation import Investigation, AnalysisType
 from app.models.reference import Reference
-from app.models.project import Project
 from app.api.v1.endpoints.auth import get_current_user
+from app.api.v1.ownership import owned_project, owned_item, item_in_project
 from app.models.user import User
 from pydantic import BaseModel
 from datetime import datetime
@@ -66,23 +66,9 @@ async def create_investigation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await owned_project(db, project_id, current_user)
 
-    # Verify reference belongs to project
-    result = await db.execute(
-        select(Reference).where(
-            Reference.id == investigation_data.reference_id,
-            Reference.project_id == project_id
-        )
-    )
-    reference = result.scalar_one_or_none()
-    if not reference:
-        raise HTTPException(status_code=404, detail="Reference not found in this project")
+    reference = await item_in_project(db, Reference, investigation_data.reference_id, project_id, "Reference")
 
     investigation = Investigation(
         project_id=project_id,
@@ -104,12 +90,7 @@ async def list_investigations(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await owned_project(db, project_id, current_user)
 
     query = select(Investigation).where(Investigation.project_id == project_id)
     if analysis_type:
@@ -139,13 +120,7 @@ async def get_investigation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Investigation)
-        .where(Investigation.id == investigation_id, Investigation.project_id == project_id)
-    )
-    investigation = result.scalar_one_or_none()
-    if not investigation:
-        raise HTTPException(status_code=404, detail="Investigation not found")
+    investigation = await owned_item(db, Investigation, investigation_id, project_id, current_user, "Investigation")
     return investigation
 
 
@@ -157,15 +132,11 @@ async def update_investigation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Investigation)
-        .where(Investigation.id == investigation_id, Investigation.project_id == project_id)
-    )
-    investigation = result.scalar_one_or_none()
-    if not investigation:
-        raise HTTPException(status_code=404, detail="Investigation not found")
+    investigation = await owned_item(db, Investigation, investigation_id, project_id, current_user, "Investigation")
 
     update_data = investigation_data.model_dump(exclude_unset=True)
+    if update_data.get("reference_id"):
+        await item_in_project(db, Reference, update_data["reference_id"], project_id, "Reference")
     for field, value in update_data.items():
         setattr(investigation, field, value)
 
@@ -181,13 +152,7 @@ async def delete_investigation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Investigation)
-        .where(Investigation.id == investigation_id, Investigation.project_id == project_id)
-    )
-    investigation = result.scalar_one_or_none()
-    if not investigation:
-        raise HTTPException(status_code=404, detail="Investigation not found")
+    investigation = await owned_item(db, Investigation, investigation_id, project_id, current_user, "Investigation")
 
     await db.delete(investigation)
     await db.commit()

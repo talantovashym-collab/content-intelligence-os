@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     # overrides that provider's default model. With LLM_FALLBACK on, a failing
     # provider (no credit, overloaded, bad key) hands the request to the next
     # configured one, and is skipped for LLM_PROVIDER_COOLDOWN_SECONDS.
+    # Every user brings their own provider keys (Settings → AI keys, stored encrypted).
+    # The keys below are only used when ALLOW_SERVER_KEYS is true, e.g. a private
+    # single-user install; on a shared install they would bill every user to you.
+    ALLOW_SERVER_KEYS: bool = False
+    # Fernet key for stored user secrets; derived from SECRET_KEY when empty
+    ENCRYPTION_KEY: Optional[str] = None
     LLM_PROVIDER: Optional[str] = None
     LLM_MODEL: Optional[str] = None
     LLM_TIMEOUT_SECONDS: float = 120.0

@@ -1,13 +1,13 @@
 from typing import Any, Dict, List, Optional, Union
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
 
 from app.db.session import get_db
 from app.models.opportunity import Opportunity, OpportunityStatus, CreativeFormat
-from app.models.project import Project
 from app.api.v1.endpoints.auth import get_current_user
+from app.api.v1.ownership import owned_project, owned_item
 from app.models.user import User
 from pydantic import BaseModel
 from datetime import datetime
@@ -88,13 +88,7 @@ async def create_opportunity(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Verify project ownership
-    result = await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await owned_project(db, project_id, current_user)
 
     opportunity = Opportunity(
         project_id=project_id,
@@ -116,13 +110,7 @@ async def list_opportunities(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Verify project ownership
-    result = await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await owned_project(db, project_id, current_user)
 
     query = select(Opportunity).where(Opportunity.project_id == project_id)
     if status:
@@ -152,13 +140,7 @@ async def get_opportunity(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Opportunity)
-        .where(Opportunity.id == opportunity_id, Opportunity.project_id == project_id)
-    )
-    opportunity = result.scalar_one_or_none()
-    if not opportunity:
-        raise HTTPException(status_code=404, detail="Opportunity not found")
+    opportunity = await owned_item(db, Opportunity, opportunity_id, project_id, current_user, "Opportunity")
     return opportunity
 
 
@@ -170,13 +152,7 @@ async def update_opportunity(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Opportunity)
-        .where(Opportunity.id == opportunity_id, Opportunity.project_id == project_id)
-    )
-    opportunity = result.scalar_one_or_none()
-    if not opportunity:
-        raise HTTPException(status_code=404, detail="Opportunity not found")
+    opportunity = await owned_item(db, Opportunity, opportunity_id, project_id, current_user, "Opportunity")
 
     update_data = opportunity_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -194,13 +170,7 @@ async def delete_opportunity(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Opportunity)
-        .where(Opportunity.id == opportunity_id, Opportunity.project_id == project_id)
-    )
-    opportunity = result.scalar_one_or_none()
-    if not opportunity:
-        raise HTTPException(status_code=404, detail="Opportunity not found")
+    opportunity = await owned_item(db, Opportunity, opportunity_id, project_id, current_user, "Opportunity")
 
     await db.delete(opportunity)
     await db.commit()

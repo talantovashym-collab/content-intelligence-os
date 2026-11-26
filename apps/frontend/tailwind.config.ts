@@ -10,6 +10,10 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Landing page palette: near-black ink, warm ivory type, one amber signal accent
+        ink: { 950: '#07070a', 900: '#0c0c10', 850: '#111116', 800: '#17171d', 700: '#24242c' },
+        ivory: { DEFAULT: '#f2ede3', dim: '#a8a39a', faint: '#6d6a64' },
+        signal: { DEFAULT: '#ffb347', soft: '#ffcf8a', deep: '#e8901a' },
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
@@ -52,8 +56,21 @@ const config: Config = {
       fontFamily: {
         sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
         mono: ['var(--font-mono)', 'monospace'],
+        display: ['var(--font-display)', 'Georgia', 'serif'],
       },
       keyframes: {
+        scan: {
+          '0%': { transform: 'translateX(-10%)', opacity: '0' },
+          '8%': { opacity: '1' },
+          '92%': { opacity: '1' },
+          '100%': { transform: 'translateX(1000%)', opacity: '0' },
+        },
+        rise: {
+          from: { opacity: '0', transform: 'translateY(14px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
+        draw: { from: { strokeDashoffset: '1' }, to: { strokeDashoffset: '0' } },
+        blink: { '0%, 100%': { opacity: '1' }, '50%': { opacity: '0.25' } },
         'accordion-down': {
           from: { height: '0' },
           to: { height: 'var(--radix-accordion-content-height)' },
@@ -66,6 +83,10 @@ const config: Config = {
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
+        scan: 'scan 6s cubic-bezier(0.45, 0, 0.55, 1) infinite',
+        rise: 'rise 0.9s cubic-bezier(0.16, 1, 0.3, 1) both',
+        draw: 'draw 2.4s cubic-bezier(0.65, 0, 0.35, 1) 0.4s both',
+        blink: 'blink 2.4s ease-in-out infinite',
       },
     },
   },

@@ -1,16 +1,16 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, Circle, Loader2, Settings, Zap } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Loader2, Settings } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/layout/page-header';
 import { InlineError } from '@/components/source-note';
-import { cn } from '@/lib/utils';
-import { PLATFORMS, PLATFORM_LABELS, accountApi, projectsApi, systemApi, type Platform, type Project } from '@/lib/api';
+import { PLATFORMS, PLATFORM_LABELS, accountApi, projectsApi, type Platform, type Project } from '@/lib/api';
+import { AiKeysCard } from '@/components/settings/ai-keys-card';
 import { useAuth } from '@/lib/auth';
 import { useProjects } from '@/lib/project-context';
 
@@ -19,81 +19,11 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <PageHeader icon={Settings} color="from-slate-500 to-slate-700" title="Settings"
-        description="Your account, the AI provider, and the current project" />
-      <AiProviderCard />
+        description="Your AI keys, your account, and the current project" />
+      <AiKeysCard />
       {current && <ProjectSettings key={current.id} project={current} />}
       <ProfileCard />
     </div>
-  );
-}
-
-function AiProviderCard() {
-  const status = useQuery({ queryKey: ['system', 'ai'], queryFn: systemApi.ai });
-  const test = useMutation({ mutationFn: systemApi.testAi });
-  const s = status.data;
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-xl">AI provider</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {status.isLoading && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
-        <InlineError error={status.error} />
-        {s && (
-          <>
-            <p className="text-sm">
-              {s.active_label ? (
-                <>Using <span className="font-semibold">{s.active_label}</span> with model <code className="rounded bg-muted px-1">{s.model}</code>.</>
-              ) : (
-                <>No provider configured. Every AI feature still works, but produces template output instead of real analysis.</>
-              )}
-              {s.requested_provider && !s.active_label && (
-                <span className="block text-amber-700">LLM_PROVIDER is set to “{s.requested_provider}” but that provider has no key.</span>
-              )}
-              {s.fallback && s.fallback_order.length > 0 && (
-                <span className="block text-muted-foreground">
-                  If it fails (no credit, overloaded), requests go on to: {s.fallback_order.join(' → ')}.
-                </span>
-              )}
-            </p>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {s.providers.map((p) => (
-                <div key={p.name} className={cn('flex items-center gap-2 rounded-md border p-2 text-sm', p.name === s.active_provider && 'border-primary')}>
-                  {p.configured ? <CheckCircle className="h-4 w-4 text-green-600" /> : <Circle className="h-4 w-4 text-muted-foreground" />}
-                  <span className="font-medium">{p.label}</span>
-                  {p.cooling_down && <span className="text-xs text-amber-700">failed recently</span>}
-                  <code className="ml-auto text-xs text-muted-foreground">{p.env}</code>
-                </div>
-              ))}
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button variant="outline" onClick={() => test.mutate()} disabled={test.isPending || !s.active_provider}>
-                {test.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}Test connection
-              </Button>
-              {test.data && (
-                <span className="text-sm text-green-700">
-                  Working: {test.data.model} replied “{test.data.reply}” in {(test.data.latency_ms / 1000).toFixed(1)}s
-                </span>
-              )}
-            </div>
-            <InlineError error={test.error} />
-          </>
-        )}
-        <details className="rounded-md bg-muted/40 p-3 text-sm">
-          <summary className="cursor-pointer font-medium">How to add a key</summary>
-          <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted-foreground">
-            <li>Get an API key from one provider (OpenAI, Anthropic, Google Gemini, Mistral, Groq, DeepSeek, OpenRouter, NVIDIA NIM, Vercel AI Gateway, TeamoRouter or Token Harbor).</li>
-            <li>
-              Open the <code>.env</code> file in the project folder and set its line, e.g. <code>MISTRAL_API_KEY=&quot;your-key&quot;</code>.
-              Use the exact variable name shown above. Optional: <code>LLM_MODEL</code> picks a different model, <code>LLM_PROVIDER</code> picks which one goes first when several keys are set.
-            </li>
-            <li>Restart the backend: <code>docker compose up -d backend celery-worker</code>, then press Test connection.</li>
-          </ol>
-          <p className="mt-2 text-xs text-muted-foreground">Keys stay on the server; this page never shows or stores them.</p>
-        </details>
-      </CardContent>
-    </Card>
   );
 }
 

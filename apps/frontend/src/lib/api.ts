@@ -38,7 +38,7 @@ function errorMessage(status: number, body: unknown): string {
 }
 
 type RequestOptions = {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   json?: unknown;
   form?: Record<string, string>;
   query?: Record<string, string | number | undefined>;
@@ -427,14 +427,43 @@ export interface Analytics {
   collected_at: string;
 }
 
+/** One of the user's own provider keys. The key itself never leaves the server; only its last 4 characters. */
+export interface SavedAIKey {
+  provider: string;
+  label: string;
+  key_hint: string | null;
+  model: string | null;
+  default_model: string;
+  priority: number;
+  updated_at: string;
+}
+
+export interface AIProviderInfo {
+  name: string;
+  label: string;
+  default_model: string;
+  key_url: string;
+  configured: boolean;
+  cooling_down: boolean;
+}
+
 export interface AIStatus {
+  /** "user" = the signed-in user's own keys; "none" = no key yet (AI features use templates) */
+  source: 'user' | 'server' | 'none';
+  server_keys_allowed: boolean;
   active_provider: string | null;
   active_label: string | null;
   model: string | null;
-  requested_provider: string | null;
   fallback: boolean;
   fallback_order: string[];
-  providers: { name: string; label: string; configured: boolean; env: string; cooling_down: boolean }[];
+  providers: AIProviderInfo[];
+  keys: SavedAIKey[];
+}
+
+export interface AITestResult {
+  model: string;
+  reply: string;
+  latency_ms: number;
 }
 
 const P = (projectId: string) => `/projects/${projectId}`;
@@ -447,7 +476,12 @@ export const accountApi = {
 
 export const systemApi = {
   ai: () => api<AIStatus>('/system/ai'),
-  testAi: () => api<AIStatus & { reply: string; latency_ms: number }>('/system/ai/test', { method: 'POST' }),
+  /** Test the whole chain, or one saved key with `provider`. */
+  testAi: (provider?: string) => api<AITestResult>('/system/ai/test', { method: 'POST', query: { provider } }),
+  saveKey: (provider: string, data: { api_key?: string; model?: string }) =>
+    api<AIStatus>(`/system/ai/keys/${provider}`, { method: 'PUT', json: data }),
+  removeKey: (provider: string) => api<void>(`/system/ai/keys/${provider}`, { method: 'DELETE' }),
+  reorderKeys: (providers: string[]) => api<AIStatus>('/system/ai/order', { method: 'PUT', json: { providers } }),
 };
 
 export const opportunitiesApi = {

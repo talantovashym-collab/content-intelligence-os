@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
@@ -7,8 +7,8 @@ import uuid
 from app.db.session import get_db
 from app.models.test import Test, TestType
 from app.models.production import Production
-from app.models.project import Project
 from app.api.v1.endpoints.auth import get_current_user
+from app.api.v1.ownership import owned_project, owned_item, item_in_project
 from app.models.user import User
 from pydantic import BaseModel
 from datetime import datetime
@@ -66,23 +66,10 @@ async def create_test(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await owned_project(db, project_id, current_user)
 
     if test_data.production_id:
-        result = await db.execute(
-            select(Production).where(
-                Production.id == test_data.production_id,
-                Production.project_id == project_id
-            )
-        )
-        production = result.scalar_one_or_none()
-        if not production:
-            raise HTTPException(status_code=404, detail="Production not found in this project")
+        production = await item_in_project(db, Production, test_data.production_id, project_id, "Production")
 
     test = Test(
         project_id=project_id,
@@ -103,12 +90,7 @@ async def list_tests(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await owned_project(db, project_id, current_user)
 
     query = select(Test).where(Test.project_id == project_id)
     if test_type:
@@ -136,13 +118,7 @@ async def get_test(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Test)
-        .where(Test.id == test_id, Test.project_id == project_id)
-    )
-    test = result.scalar_one_or_none()
-    if not test:
-        raise HTTPException(status_code=404, detail="Test not found")
+    test = await owned_item(db, Test, test_id, project_id, current_user, "Test")
     return test
 
 
@@ -154,15 +130,11 @@ async def update_test(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Test)
-        .where(Test.id == test_id, Test.project_id == project_id)
-    )
-    test = result.scalar_one_or_none()
-    if not test:
-        raise HTTPException(status_code=404, detail="Test not found")
+    test = await owned_item(db, Test, test_id, project_id, current_user, "Test")
 
     update_data = test_data.model_dump(exclude_unset=True)
+    if update_data.get("production_id"):
+        await item_in_project(db, Production, update_data["production_id"], project_id, "Production")
     for field, value in update_data.items():
         setattr(test, field, value)
 
@@ -178,13 +150,7 @@ async def delete_test(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Test)
-        .where(Test.id == test_id, Test.project_id == project_id)
-    )
-    test = result.scalar_one_or_none()
-    if not test:
-        raise HTTPException(status_code=404, detail="Test not found")
+    test = await owned_item(db, Test, test_id, project_id, current_user, "Test")
 
     await db.delete(test)
     await db.commit()
