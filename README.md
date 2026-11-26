@@ -205,11 +205,18 @@ src/
 
 ## AI Providers
 
-Every AI feature goes through one client (`apps/backend/app/services/llm.py`). Set the
-API key for **any one** provider in `.env` and restart the backend
-(`docker compose up -d backend celery-worker`):
+Every AI feature goes through one client (`apps/backend/app/services/llm.py`), and **every
+user brings their own provider keys**. After signing up, open **Settings → Your AI keys**, paste a
+key from any provider below, and press *Save and test*. Keys are encrypted at rest (Fernet; see
+`app/core/secrets.py`) and never shown again, only their last four characters. Add more than one
+and put them in order: the first is used, the others answer when it fails (out of credit,
+overloaded, revoked), and a failed key is tried last for 5 minutes. Usage is billed to each
+user's own provider account.
 
-| Provider | Variable | Default model |
+Until a user adds a key, every module still works and produces template output built from the
+real data (search results, transcripts, stats), and the dashboard asks them to add one.
+
+| Provider | Server variable (only with `ALLOW_SERVER_KEYS`) | Default model |
 |----------|----------|---------------|
 | OpenAI | `OPENAI_API_KEY` | gpt-4o-mini |
 | Anthropic | `ANTHROPIC_API_KEY` | claude-sonnet-5-5 |
@@ -224,22 +231,27 @@ API key for **any one** provider in `.env` and restart the backend
 | Token Harbor | `TOKENHARBOR_API_KEY` | deepseek-v4-flash:free |
 | Ollama (local) | `OLLAMA_BASE_URL` | llama3.1 |
 
-`LLM_MODEL` overrides the model, `LLM_PROVIDER` picks which one goes first when several keys are
-set. If a provider fails (out of credit, overloaded, bad key) the request moves on to the next
-configured provider, and the failed one is skipped for 5 minutes. `LLM_FALLBACK_ORDER`
-(e.g. `gemini,openrouter,nvidia`) limits and orders the fallbacks; `LLM_FALLBACK=false` turns them off.
-Settings → AI provider shows which one is active and has a **Test connection** button.
-Without any key every module still works and produces template output built from the
-real data (search results, transcripts, stats).
+**Server keys** (the variables above) are ignored unless `ALLOW_SERVER_KEYS=true`, which is
+meant for a private, single-user install: on a shared install they would bill every user's
+usage to you. In that mode a user without keys of their own falls back to them, ordered by
+`LLM_PROVIDER` and `LLM_FALLBACK_ORDER`, with `LLM_MODEL` overriding the first one's model.
+Ollama is server-only, because letting users enter a URL would let them point the server at
+internal addresses. `LLM_FALLBACK=false` turns fallback off for everyone.
+
+`ENCRYPTION_KEY` (a Fernet key) encrypts stored user keys; when empty it is derived from
+`SECRET_KEY`, so changing `SECRET_KEY` means users must enter their keys again.
 
 ## How the modules fit together
 
 1. **Discover / My Ideas**: YouTube search (via yt-dlp) for the niche or idea; the AI ranks
    gaps and angles. Reference videos are always real search results.
-2. **Reference Research / Library**: search YouTube or paste any video URL; the library stores
-   real stats and the caption transcript.
+2. **Reference Research / Library**: search YouTube, paste any video URL, or drag video/audio
+   files from your computer (up to `MAX_UPLOAD_MB`, checked with ffprobe). Links get real stats
+   and the caption transcript; uploads get a thumbnail and a timestamped transcript made with the
+   user's own OpenAI or Groq key (Whisper), in the background. Every item can be watched in the
+   app: uploads in the built-in player, YouTube/TikTok/Instagram as embeds.
 3. **Investigation Studio**: hooks, structure, pacing, CTAs, curiosity loops... from the
-   timestamped transcript, with links to the exact second in the video.
+   timestamped transcript; click any timestamp and the player jumps to that second.
 4. **Multi-Reference Intelligence**: compares 2–10 references into "creative DNA", saved to the
    Knowledge Base.
 5. **Creative Strategy → Production Studio**: strategies read the Knowledge Base; approved

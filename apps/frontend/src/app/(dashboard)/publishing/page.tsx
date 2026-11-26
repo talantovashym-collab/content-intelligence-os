@@ -1,15 +1,16 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BarChart, Globe, Loader2, Sparkles, Trash2 } from 'lucide-react';
+import { BarChart, FileVideo, Globe, Loader2, Sparkles, Trash2, UploadCloud } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/layout/page-header';
 import { InlineError, SourceNote } from '@/components/source-note';
+import { MediaPlayer, embedFor } from '@/components/media/media-player';
 import { cn } from '@/lib/utils';
 import {
   PLATFORMS, PLATFORM_LABELS, PUBLISH_STATUSES, humanize, productionsApi, publicationsApi, strategiesApi,
@@ -225,6 +226,7 @@ function PublicationCard({ projectId, publication: p }: { projectId: string; pub
       {(p.hashtags.length > 0 || p.tags.length > 0) && (
         <p className="text-xs text-muted-foreground">{[...p.hashtags, ...p.tags].join(' · ')}</p>
       )}
+      <FinishedCut projectId={projectId} publication={p} onChange={refresh} />
       <form className="flex flex-col gap-2 sm:flex-row"
         onSubmit={(e) => {
           e.preventDefault();
@@ -255,6 +257,58 @@ function PublicationCard({ projectId, publication: p }: { projectId: string; pub
         </Button>
       </div>
       <InlineError error={update.error ?? remove.error} />
+    </div>
+  );
+}
+
+/** The finished video for a publication: upload it here to watch it in the app, or watch the live post. */
+function FinishedCut({ projectId, publication: p, onChange }: { projectId: string; publication: Publication; onChange: () => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const upload = useMutation({
+    mutationFn: (file: File) => publicationsApi.uploadVideo(projectId, p.id, file, setProgress),
+    onSettled: () => setProgress(null),
+    onSuccess: onChange,
+  });
+  const remove = useMutation({ mutationFn: () => publicationsApi.removeVideo(projectId, p.id), onSuccess: onChange });
+  const pick = (files: FileList | null) => { if (files?.[0]) upload.mutate(files[0]); };
+  const file = p.publication_metadata?.video_file;
+  const live = !p.playback_url && embedFor(p.platform_url);
+
+  return (
+    <div className="space-y-2">
+      {p.playback_url ? (
+        <MediaPlayer source={{ title: p.title, playback_url: p.playback_url, poster_url: p.poster_url }} className="max-w-2xl" />
+      ) : live ? (
+        <MediaPlayer source={{ title: p.title, source_url: p.platform_url }} className="max-w-2xl" />
+      ) : (
+        <div onDragOver={(e) => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)}
+          onDrop={(e) => { e.preventDefault(); setDragging(false); pick(e.dataTransfer.files); }}
+          className={cn('flex max-w-2xl flex-wrap items-center gap-3 rounded-lg border border-dashed px-4 py-3 text-sm',
+            dragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25')}>
+          <UploadCloud className="h-5 w-5 text-muted-foreground" />
+          <span className="flex-1 text-muted-foreground">
+            {progress !== null ? `Uploading the finished cut… ${Math.round(progress * 100)}%` : 'Drop the finished video here to watch it in the app'}
+          </span>
+          <Button type="button" size="sm" variant="outline" disabled={upload.isPending} onClick={() => input.current?.click()}>
+            {upload.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileVideo className="mr-2 h-4 w-4" />}Choose video
+          </Button>
+        </div>
+      )}
+      {p.playback_url && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span>Finished cut: {file?.filename ?? 'video'}{file?.duration ? ` · ${Math.round(file.duration)}s` : ''}</span>
+          <Button type="button" size="sm" variant="ghost" disabled={upload.isPending} onClick={() => input.current?.click()}>
+            {upload.isPending ? `Uploading ${Math.round((progress ?? 0) * 100)}%` : 'Replace'}
+          </Button>
+          <Button type="button" size="sm" variant="ghost" className="hover:text-destructive" disabled={remove.isPending}
+            onClick={() => window.confirm('Remove the attached video file?') && remove.mutate()}>Remove video</Button>
+        </div>
+      )}
+      <input ref={input} type="file" accept="video/*,.mp4,.mov,.webm,.mkv,.m4v" className="sr-only" tabIndex={-1}
+        onChange={(e) => { pick(e.target.files); e.target.value = ''; }} />
+      <InlineError error={upload.error ?? remove.error} />
     </div>
   );
 }

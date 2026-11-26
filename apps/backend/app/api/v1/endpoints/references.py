@@ -9,7 +9,8 @@ from app.models.reference import Reference, ReferenceStatus, MediaType, Platform
 from app.models.project import Project
 from app.api.v1.endpoints.auth import get_current_user
 from app.models.user import User
-from pydantic import BaseModel
+from app.services import media
+from pydantic import BaseModel, model_validator
 from datetime import datetime
 
 router = APIRouter()
@@ -66,6 +67,17 @@ class ReferenceResponse(ReferenceBase):
     error_message: Optional[str]
     created_at: datetime
     updated_at: datetime
+    # Signed, expiring links for uploaded files (relative to the API root)
+    playback_url: Optional[str] = None
+    poster_url: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _media_urls(self):
+        if self.local_path:
+            self.playback_url = media.signed_url("references", self.id, "file")
+            if (self.reference_metadata or {}).get("thumbnail_path"):
+                self.poster_url = media.signed_url("references", self.id, "poster")
+        return self
 
     class Config:
         from_attributes = True
@@ -149,7 +161,8 @@ async def get_reference(
 ):
     result = await db.execute(
         select(Reference)
-        .where(Reference.id == reference_id, Reference.project_id == project_id)
+        .join(Project, Project.id == Reference.project_id)
+        .where(Reference.id == reference_id, Reference.project_id == project_id, Project.user_id == current_user.id)
     )
     reference = result.scalar_one_or_none()
     if not reference:
@@ -167,7 +180,8 @@ async def update_reference(
 ):
     result = await db.execute(
         select(Reference)
-        .where(Reference.id == reference_id, Reference.project_id == project_id)
+        .join(Project, Project.id == Reference.project_id)
+        .where(Reference.id == reference_id, Reference.project_id == project_id, Project.user_id == current_user.id)
     )
     reference = result.scalar_one_or_none()
     if not reference:
@@ -191,11 +205,15 @@ async def delete_reference(
 ):
     result = await db.execute(
         select(Reference)
-        .where(Reference.id == reference_id, Reference.project_id == project_id)
+        .join(Project, Project.id == Reference.project_id)
+        .where(Reference.id == reference_id, Reference.project_id == project_id,
+               Project.user_id == current_user.id)
     )
     reference = result.scalar_one_or_none()
     if not reference:
         raise HTTPException(status_code=404, detail="Reference not found")
 
+    files = (reference.local_path, (reference.reference_metadata or {}).get("thumbnail_path"))
     await db.delete(reference)
     await db.commit()
+    media.remove(*files)

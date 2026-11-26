@@ -38,7 +38,7 @@ function errorMessage(status: number, body: unknown): string {
 }
 
 type RequestOptions = {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   json?: unknown;
   form?: Record<string, string>;
   query?: Record<string, string | number | undefined>;
@@ -79,6 +79,43 @@ export async function api<T>(path: string, { method = 'GET', json, form, query }
   }
   return data as T;
 }
+
+/** Absolute URL for a signed media path returned by the API (e.g. Reference.playback_url). */
+export function mediaUrl(path: string | null | undefined): string | null {
+  return path ? API_URL + path : null;
+}
+
+/**
+ * Multipart upload with progress (fetch cannot report upload progress, so this uses XHR).
+ * Errors come back as ApiError with the same messages as api().
+ */
+export function uploadFile<T>(path: string, file: File, opts: { fields?: Record<string, string>; onProgress?: (fraction: number) => void; signal?: AbortSignal } = {}): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', API_URL + path);
+    const token = getToken();
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) opts.onProgress?.(e.loaded / e.total); };
+    xhr.onload = () => {
+      let data: unknown = null;
+      try { data = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(data as T);
+      if (xhr.status === 401 && token) { setToken(null); window.dispatchEvent(new Event('ci:logout')); }
+      reject(new ApiError(xhr.status, errorMessage(xhr.status, data)));
+    };
+    xhr.onerror = () => reject(new ApiError(0, errorMessage(0, null)));
+    xhr.onabort = () => reject(new ApiError(0, 'Upload cancelled'));
+    opts.signal?.addEventListener('abort', () => xhr.abort());
+    const form = new FormData();
+    form.append('file', file, file.name);
+    for (const [k, v] of Object.entries(opts.fields ?? {})) form.append(k, v);
+    xhr.send(form);
+  });
+}
+
+/** What the server accepts for uploads (mirrors app/services/media.py). */
+export const UPLOAD_ACCEPT = '.mp4,.m4v,.mov,.webm,.mkv,.avi,.mp3,.wav,.m4a,.aac,.ogg,.flac,video/*,audio/*';
+export const UPLOAD_MAX_MB = 500;
 
 // ---- Types (mirror the backend's Pydantic response models) ----
 
@@ -239,7 +276,36 @@ export const productionsApi = {
     }),
   remove: (projectId: string, productionId: string) =>
     api<void>(`/productions/${projectId}/productions/${productionId}`, { method: 'DELETE' }),
+
+  /** Every watchable video in the project: productions' own videos, then publications' finished cuts. */
+  videos: (projectId: string) => api<ProductionVideo[]>(`/projects/${projectId}/production-videos`),
+  uploadVideo: (projectId: string, productionId: string, file: File, onProgress?: (fraction: number) => void) =>
+    uploadFile<ProductionVideo>(`/projects/${projectId}/productions/${productionId}/video`, file, { onProgress }),
+  removeVideo: (projectId: string, productionId: string) =>
+    api<void>(`/projects/${projectId}/productions/${productionId}/video`, { method: 'DELETE' }),
+  /** Draft video from the storyboard, rendered locally with ffmpeg (no API keys). */
+  render: (projectId: string, productionId: string, aspect: VideoAspect) =>
+    api<ProductionVideo>(`/projects/${projectId}/productions/${productionId}/render`, { method: 'POST', json: { aspect } }),
 };
+
+export type VideoAspect = '16:9' | '9:16';
+
+export interface ProductionVideo {
+  kind: 'production' | 'publication';
+  /** The production's id, or the publication's for a publication's finished cut. */
+  id: string;
+  production_id: string;
+  title: string;
+  source: 'upload' | 'render' | 'publication';
+  platform: Platform | null;
+  playback_url: string;
+  poster_url: string | null;
+  filename: string | null;
+  duration: number | null;
+  width: number | null;
+  height: number | null;
+  created_at: string | null;
+}
 
 // ---- Research → learning modules ----
 
@@ -305,9 +371,17 @@ export interface Reference {
   hashtags: string[];
   captions: string | null;
   status: string;
-  reference_metadata: { transcript?: { language: string; automatic: boolean; segments: { start: number; text: string }[] } | null };
+  media_type: 'VIDEO' | 'AUDIO' | 'IMAGE' | 'DOCUMENT';
+  reference_metadata: {
+    transcript?: { language: string | null; automatic: boolean; source?: string; segments: { start: number; text: string }[] } | null;
+    video_id?: string;
+    upload?: { filename: string; size: number; content_type: string; width?: number | null; height?: number | null };
+  };
   error_message: string | null;
   created_at: string;
+  /** Signed, expiring paths for uploaded files; pass through mediaUrl(). */
+  playback_url: string | null;
+  poster_url: string | null;
 }
 
 export interface SearchResult {
@@ -389,6 +463,10 @@ export interface Publication {
   status: PublishStatus;
   platform_url: string | null;
   created_at: string;
+  publication_metadata: { video_file?: { filename: string; size: number; duration: number | null } };
+  /** Signed, expiring paths for the attached finished cut; pass through mediaUrl(). */
+  playback_url: string | null;
+  poster_url: string | null;
 }
 
 export type PublicationInput = Pick<Publication, 'production_id' | 'platform' | 'account_id' | 'title' | 'description' | 'tags' | 'hashtags' | 'video_url'> & {
@@ -427,14 +505,43 @@ export interface Analytics {
   collected_at: string;
 }
 
+/** One of the user's own provider keys. The key itself never leaves the server; only its last 4 characters. */
+export interface SavedAIKey {
+  provider: string;
+  label: string;
+  key_hint: string | null;
+  model: string | null;
+  default_model: string;
+  priority: number;
+  updated_at: string;
+}
+
+export interface AIProviderInfo {
+  name: string;
+  label: string;
+  default_model: string;
+  key_url: string;
+  configured: boolean;
+  cooling_down: boolean;
+}
+
 export interface AIStatus {
+  /** "user" = the signed-in user's own keys; "none" = no key yet (AI features use templates) */
+  source: 'user' | 'server' | 'none';
+  server_keys_allowed: boolean;
   active_provider: string | null;
   active_label: string | null;
   model: string | null;
-  requested_provider: string | null;
   fallback: boolean;
   fallback_order: string[];
-  providers: { name: string; label: string; configured: boolean; env: string; cooling_down: boolean }[];
+  providers: AIProviderInfo[];
+  keys: SavedAIKey[];
+}
+
+export interface AITestResult {
+  model: string;
+  reply: string;
+  latency_ms: number;
 }
 
 const P = (projectId: string) => `/projects/${projectId}`;
@@ -447,7 +554,12 @@ export const accountApi = {
 
 export const systemApi = {
   ai: () => api<AIStatus>('/system/ai'),
-  testAi: () => api<AIStatus & { reply: string; latency_ms: number }>('/system/ai/test', { method: 'POST' }),
+  /** Test the whole chain, or one saved key with `provider`. */
+  testAi: (provider?: string) => api<AITestResult>('/system/ai/test', { method: 'POST', query: { provider } }),
+  saveKey: (provider: string, data: { api_key?: string; model?: string }) =>
+    api<AIStatus>(`/system/ai/keys/${provider}`, { method: 'PUT', json: data }),
+  removeKey: (provider: string) => api<void>(`/system/ai/keys/${provider}`, { method: 'DELETE' }),
+  reorderKeys: (providers: string[]) => api<AIStatus>('/system/ai/order', { method: 'PUT', json: { providers } }),
 };
 
 export const opportunitiesApi = {
@@ -470,6 +582,8 @@ export const referencesApi = {
     api<SearchResult[]>(`${P(projectId)}/research/search`, { query: { q, sort, limit: 12 } }),
   capture: (projectId: string, url: string) => api<Reference>(`${P(projectId)}/references/capture`, { method: 'POST', json: { url } }),
   refresh: (projectId: string, id: string) => api<Reference>(`${P(projectId)}/references/${id}/refresh`, { method: 'POST' }),
+  upload: (projectId: string, file: File, onProgress?: (fraction: number) => void, signal?: AbortSignal) =>
+    uploadFile<Reference>(`${P(projectId)}/references/upload`, file, { onProgress, signal }),
 };
 
 export const investigationsApi = {
@@ -517,6 +631,9 @@ export const publicationsApi = {
   remove: (projectId: string, id: string) => api<void>(`/publications/${projectId}/publications/${id}`, { method: 'DELETE' }),
   draft: (projectId: string, productionId: string, platform: Platform) =>
     api<PublicationDraft>(`${P(projectId)}/publications/draft`, { method: 'POST', json: { production_id: productionId, platform } }),
+  uploadVideo: (projectId: string, id: string, file: File, onProgress?: (fraction: number) => void) =>
+    uploadFile<Publication>(`${P(projectId)}/publications/${id}/video`, file, { onProgress }),
+  removeVideo: (projectId: string, id: string) => api<Publication>(`${P(projectId)}/publications/${id}/video`, { method: 'DELETE' }),
 };
 
 export const analyticsApi = {

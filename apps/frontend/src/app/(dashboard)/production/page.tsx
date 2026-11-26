@@ -4,10 +4,11 @@ import React, { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, Clapperboard, Loader2, Trash2, Zap } from 'lucide-react';
+import { ChevronDown, Clapperboard, Film, Loader2, Trash2, Zap } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { DataView, isEmpty } from '@/components/data-view';
+import { ProductionVideoPanel, VideoGallery, videosKey } from '@/components/media/production-videos';
 import { cn } from '@/lib/utils';
 import {
   CREATIVE_FORMATS,
@@ -18,6 +19,7 @@ import {
   strategiesApi,
   type CreativeFormat,
   type Production,
+  type ProductionVideo,
   type Project,
   type Strategy,
 } from '@/lib/api';
@@ -73,7 +75,7 @@ export default function ProductionPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Production Studio</h1>
           <p className="text-muted-foreground mt-1">
-            Turn an approved strategy into a script, storyboard, assets, and a production timeline
+            Turn an approved strategy into a script and storyboard, render a draft video, and watch your finished cuts
           </p>
         </div>
       </div>
@@ -99,10 +101,33 @@ function ProductionWorkspace({ project }: { project: Project }) {
     queryFn: () => productionsApi.list(project.id),
   });
 
+  const videos = useQuery({
+    queryKey: videosKey(project.id),
+    queryFn: () => productionsApi.videos(project.id),
+    // Signed playback links expire after a few hours; refresh them well before
+    refetchInterval: 30 * 60 * 1000,
+  });
+
   const topics = new Map(strategies.data?.strategies.map((s) => [s.strategy_id, s.topic]));
+  const ownVideo = new Map<string, ProductionVideo>(
+    videos.data?.filter((v) => v.kind === 'production').map((v) => [v.production_id, v]),
+  );
 
   return (
     <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-xl">
+            <Film className="h-5 w-5" />Videos
+            {videos.data && videos.data.length > 0 && (
+              <span className="text-base font-normal text-muted-foreground">({videos.data.length})</span>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <VideoGallery videos={videos.data} loading={videos.isLoading} error={videos.error} />
+        </CardContent>
+      </Card>
       <NewProduction
         project={project}
         approved={strategies.data?.strategies.filter((s) => s.is_approved) ?? []}
@@ -123,7 +148,7 @@ function ProductionWorkspace({ project }: { project: Project }) {
             <p className="py-6 text-center text-muted-foreground">No productions yet.</p>
           )}
           {productions.data?.productions.map((p) => (
-            <ProductionCard key={p.id} production={p} topic={topics.get(p.strategy_id)} />
+            <ProductionCard key={p.id} production={p} topic={topics.get(p.strategy_id)} video={ownVideo.get(p.id)} />
           ))}
         </CardContent>
       </Card>
@@ -256,12 +281,15 @@ function NewProduction({
   );
 }
 
-function ProductionCard({ production, topic }: { production: Production; topic?: string }) {
+function ProductionCard({ production, topic, video }: { production: Production; topic?: string; video?: ProductionVideo }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const remove = useMutation({
     mutationFn: () => productionsApi.remove(production.project_id, production.id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['productions', production.project_id] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['productions', production.project_id] });
+      queryClient.invalidateQueries({ queryKey: videosKey(production.project_id) });
+    },
   });
   const sections = SECTIONS.filter(([key]) => !isEmpty(production[key]));
 
@@ -277,6 +305,11 @@ function ProductionCard({ production, topic }: { production: Production; topic?:
           <h3 className="font-semibold">{topic ?? 'Production'}</h3>
           <span className="rounded bg-muted px-2 py-0.5 text-xs">{humanize(production.format)}</span>
           <span className={cn('rounded px-2 py-0.5 text-xs', STATUS_STYLE[production.status] ?? 'bg-muted')}>{production.status}</span>
+          {video && (
+            <span className="inline-flex items-center gap-1 rounded bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+              <Film className="h-3 w-3" />{video.source === 'render' ? 'Draft video' : 'Video'}
+            </span>
+          )}
           <span className="text-xs text-muted-foreground">v{production.version}</span>
           <span className="text-xs text-muted-foreground">{new Date(production.created_at).toLocaleString()}</span>
         </div>
@@ -285,6 +318,8 @@ function ProductionCard({ production, topic }: { production: Production; topic?:
 
       {open && (
         <div className="space-y-4 border-t p-4">
+          <ProductionVideoPanel projectId={production.project_id} productionId={production.id}
+            title={topic ?? 'Production'} video={video} />
           {sections.length === 0 && <p className="text-sm text-muted-foreground">This production has no generated content.</p>}
           {sections.map(([key, title]) => (
             <details key={key} className="rounded-md border bg-muted/20 p-3" open={key === 'script'}>

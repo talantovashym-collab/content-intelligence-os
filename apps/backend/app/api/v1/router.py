@@ -15,6 +15,8 @@ from app.api.v1.endpoints import (
     opportunity_discovery,
     system,
     workflows,
+    media,
+    production_media,
 )
 
 api_router = APIRouter()
@@ -33,3 +35,5 @@ api_router.include_router(knowledge.router, prefix="/knowledge", tags=["knowledg
 api_router.include_router(opportunity_discovery.router, prefix="/projects", tags=["opportunity-discovery"])
 api_router.include_router(system.router, prefix="/system", tags=["system"])
 api_router.include_router(workflows.router, prefix="/projects", tags=["workflows"])
+api_router.include_router(media.router, prefix="/media", tags=["media"])
+api_router.include_router(production_media.router, prefix="/projects", tags=["production-media"])

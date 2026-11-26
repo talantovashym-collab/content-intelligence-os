@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     # overrides that provider's default model. With LLM_FALLBACK on, a failing
     # provider (no credit, overloaded, bad key) hands the request to the next
     # configured one, and is skipped for LLM_PROVIDER_COOLDOWN_SECONDS.
+    # Every user brings their own provider keys (Settings → AI keys, stored encrypted).
+    # The keys below are only used when ALLOW_SERVER_KEYS is true, e.g. a private
+    # single-user install; on a shared install they would bill every user to you.
+    ALLOW_SERVER_KEYS: bool = False
+    # Fernet key for stored user secrets; derived from SECRET_KEY when empty
+    ENCRYPTION_KEY: Optional[str] = None
     LLM_PROVIDER: Optional[str] = None
     LLM_MODEL: Optional[str] = None
     LLM_TIMEOUT_SECONDS: float = 120.0
@@ -105,6 +111,9 @@ class Settings(BaseSettings):
     # Storage
     STORAGE_TYPE: str = "local"
     LOCAL_STORAGE_PATH: str = "./storage"
+    # Uploaded media (Library and finished cuts); signed playback links expire after the TTL
+    MAX_UPLOAD_MB: int = 500
+    MEDIA_URL_TTL_SECONDS: int = 6 * 3600
     S3_BUCKET: Optional[str] = None
     S3_REGION: Optional[str] = None
     S3_ACCESS_KEY: Optional[str] = None

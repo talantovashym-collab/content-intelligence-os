@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, DateTime, func, ForeignKey, UniqueConstraint
+from sqlalchemy import String, DateTime, Integer, Text, func, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 import uuid
@@ -57,20 +57,34 @@ class Session(Base):
 
 
 class ApiKey(Base):
+    """A user's own AI provider key, encrypted at rest (see app/core/secrets.py).
+
+    One row per (user, provider). `priority` orders them: the lowest is tried first,
+    the others are fallbacks. The plaintext key is never returned by the API.
+    """
+
     __tablename__ = "api_keys"
+    __table_args__ = (UniqueConstraint("user_id", "provider", name="uq_api_keys_user_provider"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     provider: Mapped[str] = mapped_column(String(100), nullable=False)
-    key_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    key_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)  # unused, kept for old rows
+    encrypted_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    key_hint: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    priority: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     label: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

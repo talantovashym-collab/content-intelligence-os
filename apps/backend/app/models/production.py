@@ -48,6 +48,8 @@ class Production(Base):
     captions: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     subtitles: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     timeline: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    # The production's video, written only by the server: {"video_file": {...}} (see app/services/uploads.py)
+    media: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}", nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="draft", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
