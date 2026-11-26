@@ -1,13 +1,12 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
 
 from app.db.session import get_db
 from app.models.strategy import CreativeStrategy
-from app.models.project import Project
 from app.api.v1.endpoints.auth import get_current_user
+from app.api.v1.ownership import owned_project, owned_item
 from app.models.user import User
 from app.services.creative_strategy.service import CreativeStrategyService
 from app.services.creative_strategy.schemas import CreativeStrategyGenerationRequest
@@ -79,19 +78,7 @@ async def _get_owned_strategy(
     db: AsyncSession, project_id: uuid.UUID, strategy_id: uuid.UUID, user: User
 ) -> CreativeStrategy:
     """Fetch a strategy that belongs to project_id AND a project owned by user."""
-    result = await db.execute(
-        select(CreativeStrategy)
-        .join(Project, CreativeStrategy.project_id == Project.id)
-        .where(
-            CreativeStrategy.id == strategy_id,
-            CreativeStrategy.project_id == project_id,
-            Project.user_id == user.id,
-        )
-    )
-    strategy = result.scalar_one_or_none()
-    if not strategy:
-        raise HTTPException(status_code=404, detail="Strategy not found")
-    return strategy
+    return await owned_item(db, CreativeStrategy, strategy_id, project_id, user, "Strategy")
 
 
 class StrategyApprovalRequestAPI(BaseModel):
@@ -106,13 +93,7 @@ async def create_strategy(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Verify project ownership
-    result = await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await owned_project(db, project_id, current_user)
 
     # Create service and generate strategy
     service = CreativeStrategyService(db)
@@ -133,12 +114,7 @@ async def list_strategies(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await owned_project(db, project_id, current_user)
 
     service = CreativeStrategyService(db)
     strategies, total = await service.list_strategies(project_id, page, page_size)
@@ -158,12 +134,7 @@ async def get_strategy(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await owned_project(db, project_id, current_user)
 
     service = CreativeStrategyService(db)
     strategy = await service.get_strategy(strategy_id)
@@ -181,12 +152,7 @@ async def approve_strategy(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await owned_project(db, project_id, current_user)
 
     service = CreativeStrategyService(db)
     existing = await service.get_strategy(strategy_id)

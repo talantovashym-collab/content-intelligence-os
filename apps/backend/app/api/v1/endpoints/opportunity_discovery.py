@@ -1,12 +1,11 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
 
 from app.db.session import get_db
-from app.models.project import Project
 from app.api.v1.endpoints.auth import get_current_user
+from app.api.v1.ownership import owned_project
 from app.models.user import User
 from app.services.opportunity_discovery import (
     OpportunityDiscoveryEngine,
@@ -54,13 +53,7 @@ async def start_discovery(
     Start AI-powered opportunity discovery for a project.
     Researches trends, analyzes competitors, finds references, and generates ranked opportunities.
     """
-    # Verify project ownership
-    result = await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await owned_project(db, project_id, current_user)
 
     # Convert to service request
     from app.services.opportunity_discovery.schemas import Platform, CreativeFormat
@@ -121,12 +114,7 @@ async def get_discovery_status(
     current_user: User = Depends(get_current_user),
 ):
     """Get the status of opportunity discovery for a project."""
-    result = await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await owned_project(db, project_id, current_user)
 
     # For now, return basic info - in production this would track async job status
     return {

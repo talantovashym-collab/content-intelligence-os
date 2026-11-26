@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
@@ -7,8 +7,8 @@ import uuid
 from app.db.session import get_db
 from app.models.analytics import Analytics, Platform
 from app.models.publication import Publication
-from app.models.project import Project
 from app.api.v1.endpoints.auth import get_current_user
+from app.api.v1.ownership import owned_project, owned_item, item_in_project
 from app.models.user import User
 from pydantic import BaseModel
 from datetime import datetime
@@ -86,22 +86,9 @@ async def create_analytics(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await owned_project(db, project_id, current_user)
 
-    result = await db.execute(
-        select(Publication).where(
-            Publication.id == analytics_data.publication_id,
-            Publication.project_id == project_id
-        )
-    )
-    publication = result.scalar_one_or_none()
-    if not publication:
-        raise HTTPException(status_code=404, detail="Publication not found in this project")
+    publication = await item_in_project(db, Publication, analytics_data.publication_id, project_id, "Publication")
 
     analytics = Analytics(
         project_id=project_id,
@@ -122,12 +109,7 @@ async def list_analytics(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await owned_project(db, project_id, current_user)
 
     query = select(Analytics).where(Analytics.project_id == project_id)
     if platform:
@@ -155,13 +137,7 @@ async def get_analytics(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Analytics)
-        .where(Analytics.id == analytics_id, Analytics.project_id == project_id)
-    )
-    analytics = result.scalar_one_or_none()
-    if not analytics:
-        raise HTTPException(status_code=404, detail="Analytics not found")
+    analytics = await owned_item(db, Analytics, analytics_id, project_id, current_user, "Analytics")
     return analytics
 
 
@@ -173,15 +149,11 @@ async def update_analytics(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Analytics)
-        .where(Analytics.id == analytics_id, Analytics.project_id == project_id)
-    )
-    analytics = result.scalar_one_or_none()
-    if not analytics:
-        raise HTTPException(status_code=404, detail="Analytics not found")
+    analytics = await owned_item(db, Analytics, analytics_id, project_id, current_user, "Analytics")
 
     update_data = analytics_data.model_dump(exclude_unset=True)
+    if update_data.get("publication_id"):
+        await item_in_project(db, Publication, update_data["publication_id"], project_id, "Publication")
     for field, value in update_data.items():
         setattr(analytics, field, value)
 
@@ -197,13 +169,7 @@ async def delete_analytics(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Analytics)
-        .where(Analytics.id == analytics_id, Analytics.project_id == project_id)
-    )
-    analytics = result.scalar_one_or_none()
-    if not analytics:
-        raise HTTPException(status_code=404, detail="Analytics not found")
+    analytics = await owned_item(db, Analytics, analytics_id, project_id, current_user, "Analytics")
 
     await db.delete(analytics)
     await db.commit()

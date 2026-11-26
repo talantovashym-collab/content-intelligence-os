@@ -7,8 +7,8 @@ import uuid
 from app.db.session import get_db
 from app.models.production import Production, CreativeFormat
 from app.models.strategy import CreativeStrategy
-from app.models.project import Project
 from app.api.v1.endpoints.auth import get_current_user
+from app.api.v1.ownership import owned_project, owned_item, item_in_project
 from app.models.user import User
 from app.services.production_studio.service import ProductionStudioService
 from app.services.production_studio.schemas import (
@@ -113,19 +113,7 @@ async def _get_owned_production(
     db: AsyncSession, project_id: uuid.UUID, production_id: uuid.UUID, user: User
 ) -> Production:
     """Fetch a production that belongs to project_id AND a project owned by user."""
-    result = await db.execute(
-        select(Production)
-        .join(Project, Production.project_id == Project.id)
-        .where(
-            Production.id == production_id,
-            Production.project_id == project_id,
-            Project.user_id == user.id,
-        )
-    )
-    production = result.scalar_one_or_none()
-    if not production:
-        raise HTTPException(status_code=404, detail="Production not found")
-    return production
+    return await owned_item(db, Production, production_id, project_id, user, "Production")
 
 
 
@@ -137,23 +125,10 @@ async def generate_production(
     current_user: User = Depends(get_current_user),
 ):
     """Generate a complete production package from an approved creative strategy."""
-    result = await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await owned_project(db, project_id, current_user)
 
     # Verify strategy belongs to project and is approved
-    result = await db.execute(
-        select(CreativeStrategy).where(
-            CreativeStrategy.id == production_data.strategy_id,
-            CreativeStrategy.project_id == project_id
-        )
-    )
-    strategy = result.scalar_one_or_none()
-    if not strategy:
-        raise HTTPException(status_code=404, detail="Strategy not found in this project")
+    strategy = await item_in_project(db, CreativeStrategy, production_data.strategy_id, project_id, "Strategy")
     if not strategy.is_approved:
         raise HTTPException(status_code=400, detail="Strategy must be approved before generating production")
 
@@ -179,12 +154,7 @@ async def list_productions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await owned_project(db, project_id, current_user)
 
     query = select(Production).where(Production.project_id == project_id)
     count_query = select(func.count()).select_from(query.subquery())
@@ -208,12 +178,7 @@ async def get_production_queue(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await owned_project(db, project_id, current_user)
 
     service = ProductionStudioService(db)
     queue = await service.get_production_queue(project_id)

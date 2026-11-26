@@ -1,13 +1,13 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
 
 from app.db.session import get_db
 from app.models.knowledge import KnowledgeEntry
-from app.models.project import Project
 from app.api.v1.endpoints.auth import get_current_user
+from app.api.v1.ownership import owned_project, owned_item
 from app.models.user import User
 from pydantic import BaseModel
 from datetime import datetime
@@ -68,12 +68,7 @@ async def create_knowledge_entry(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await owned_project(db, project_id, current_user)
 
     entry = KnowledgeEntry(
         project_id=project_id,
@@ -95,12 +90,7 @@ async def list_knowledge_entries(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(Project).where(Project.id == project_id, Project.user_id == current_user.id)
-    )
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await owned_project(db, project_id, current_user)
 
     query = select(KnowledgeEntry).where(KnowledgeEntry.project_id == project_id)
     if category:
@@ -130,13 +120,7 @@ async def get_knowledge_entry(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(KnowledgeEntry)
-        .where(KnowledgeEntry.id == entry_id, KnowledgeEntry.project_id == project_id)
-    )
-    entry = result.scalar_one_or_none()
-    if not entry:
-        raise HTTPException(status_code=404, detail="Knowledge entry not found")
+    entry = await owned_item(db, KnowledgeEntry, entry_id, project_id, current_user, "Knowledge entry")
     return entry
 
 
@@ -148,13 +132,7 @@ async def update_knowledge_entry(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(KnowledgeEntry)
-        .where(KnowledgeEntry.id == entry_id, KnowledgeEntry.project_id == project_id)
-    )
-    entry = result.scalar_one_or_none()
-    if not entry:
-        raise HTTPException(status_code=404, detail="Knowledge entry not found")
+    entry = await owned_item(db, KnowledgeEntry, entry_id, project_id, current_user, "Knowledge entry")
 
     update_data = entry_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -172,13 +150,7 @@ async def delete_knowledge_entry(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(KnowledgeEntry)
-        .where(KnowledgeEntry.id == entry_id, KnowledgeEntry.project_id == project_id)
-    )
-    entry = result.scalar_one_or_none()
-    if not entry:
-        raise HTTPException(status_code=404, detail="Knowledge entry not found")
+    entry = await owned_item(db, KnowledgeEntry, entry_id, project_id, current_user, "Knowledge entry")
 
     await db.delete(entry)
     await db.commit()
