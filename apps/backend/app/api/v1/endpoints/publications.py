@@ -10,7 +10,8 @@ from app.models.production import Production
 from app.models.project import Project
 from app.api.v1.endpoints.auth import get_current_user
 from app.models.user import User
-from pydantic import BaseModel
+from app.services import media
+from pydantic import BaseModel, model_validator
 from datetime import datetime
 
 router = APIRouter()
@@ -63,6 +64,18 @@ class PublicationResponse(PublicationBase):
     publication_metadata: dict
     created_at: datetime
     updated_at: datetime
+    # Signed, expiring links for the uploaded finished cut (relative to the API root)
+    playback_url: Optional[str] = None
+    poster_url: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _media_urls(self):
+        video = (self.publication_metadata or {}).get("video_file") or {}
+        if video.get("path"):
+            self.playback_url = media.signed_url("publications", self.id, "file")
+            if video.get("poster_path"):
+                self.poster_url = media.signed_url("publications", self.id, "poster")
+        return self
 
     class Config:
         from_attributes = True
@@ -156,7 +169,8 @@ async def get_publication(
 ):
     result = await db.execute(
         select(Publication)
-        .where(Publication.id == publication_id, Publication.project_id == project_id)
+        .join(Project, Project.id == Publication.project_id)
+        .where(Publication.id == publication_id, Publication.project_id == project_id, Project.user_id == current_user.id)
     )
     publication = result.scalar_one_or_none()
     if not publication:
@@ -174,7 +188,8 @@ async def update_publication(
 ):
     result = await db.execute(
         select(Publication)
-        .where(Publication.id == publication_id, Publication.project_id == project_id)
+        .join(Project, Project.id == Publication.project_id)
+        .where(Publication.id == publication_id, Publication.project_id == project_id, Project.user_id == current_user.id)
     )
     publication = result.scalar_one_or_none()
     if not publication:
@@ -198,11 +213,15 @@ async def delete_publication(
 ):
     result = await db.execute(
         select(Publication)
-        .where(Publication.id == publication_id, Publication.project_id == project_id)
+        .join(Project, Project.id == Publication.project_id)
+        .where(Publication.id == publication_id, Publication.project_id == project_id,
+               Project.user_id == current_user.id)
     )
     publication = result.scalar_one_or_none()
     if not publication:
         raise HTTPException(status_code=404, detail="Publication not found")
 
+    video = (publication.publication_metadata or {}).get("video_file") or {}
     await db.delete(publication)
     await db.commit()
+    media.remove(video.get("path"), video.get("poster_path"))

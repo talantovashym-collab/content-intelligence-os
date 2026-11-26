@@ -459,22 +459,40 @@ async def complete_json(
     return parse_json_object(text)
 
 
-async def transcribe(audio_path: Path) -> str:
-    """Speech-to-text via an OpenAI-style transcription API (OpenAI, Groq), in provider_chain() order."""
+async def transcribe(audio_path: Path, language: Optional[str] = None) -> Dict[str, Any]:
+    """Speech-to-text with timestamps via an OpenAI-style API (OpenAI, Groq), in provider_chain() order.
+
+    Returns {"text", "language", "segments": [{"start", "end", "text"}], "provider"}.
+    The file must be under the provider's upload limit (~25 MB); media.audio_chunks splits long audio.
+    """
     ring = await keyring()
     chain = provider_chain(ring)
     if not chain:
         raise LLMUnavailable(NO_KEY_MESSAGE)
     capable = [p for p in chain if p.transcription_model]
     if not capable:
-        raise LLMUnavailable("None of your AI keys can transcribe audio; add an OpenAI or Groq key")
+        raise LLMUnavailable("Transcribing uploads needs an OpenAI or Groq key; add one in Settings → AI keys")
     errors: List[str] = []
     for provider in capable:
         client = _openai_client(provider, ring.keys[provider.name])
+        kwargs: Dict[str, Any] = {"model": provider.transcription_model, "response_format": "verbose_json"}
+        if language and len(language) == 2:
+            kwargs["language"] = language.lower()
         try:
             with open(audio_path, "rb") as audio:
-                result = await client.audio.transcriptions.create(model=provider.transcription_model, file=audio)
-            return result.text
+                result = await client.audio.transcriptions.create(file=audio, **kwargs)
         except Exception as e:
             errors.append(f"{provider.label}: {_plain(e)}")
+            logger.info("Transcription with %s failed: %s", provider.label, str(e)[:500])
+            continue
+        data = result if isinstance(result, dict) else result.model_dump()
+        segments = [
+            {"start": round(float(seg.get("start") or 0), 2), "end": round(float(seg.get("end") or 0), 2),
+             "text": (seg.get("text") or "").strip()}
+            for seg in (data.get("segments") or [])
+            if (seg.get("text") or "").strip()
+        ]
+        text = (data.get("text") or " ".join(seg["text"] for seg in segments)).strip()
+        _last_provider.set(provider.label)
+        return {"text": text, "language": data.get("language"), "segments": segments, "provider": provider.label}
     raise LLMError("Transcription failed: " + "; ".join(errors))

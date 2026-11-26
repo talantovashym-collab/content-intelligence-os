@@ -111,6 +111,9 @@ class Settings(BaseSettings):
     # Storage
     STORAGE_TYPE: str = "local"
     LOCAL_STORAGE_PATH: str = "./storage"
+    # Uploaded media (Library and finished cuts); signed playback links expire after the TTL
+    MAX_UPLOAD_MB: int = 500
+    MEDIA_URL_TTL_SECONDS: int = 6 * 3600
     S3_BUCKET: Optional[str] = None
     S3_REGION: Optional[str] = None
     S3_ACCESS_KEY: Optional[str] = None

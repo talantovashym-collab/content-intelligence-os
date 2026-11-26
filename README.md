@@ -245,10 +245,13 @@ internal addresses. `LLM_FALLBACK=false` turns fallback off for everyone.
 
 1. **Discover / My Ideas**: YouTube search (via yt-dlp) for the niche or idea; the AI ranks
    gaps and angles. Reference videos are always real search results.
-2. **Reference Research / Library**: search YouTube or paste any video URL; the library stores
-   real stats and the caption transcript.
+2. **Reference Research / Library**: search YouTube, paste any video URL, or drag video/audio
+   files from your computer (up to `MAX_UPLOAD_MB`, checked with ffprobe). Links get real stats
+   and the caption transcript; uploads get a thumbnail and a timestamped transcript made with the
+   user's own OpenAI or Groq key (Whisper), in the background. Every item can be watched in the
+   app: uploads in the built-in player, YouTube/TikTok/Instagram as embeds.
 3. **Investigation Studio**: hooks, structure, pacing, CTAs, curiosity loops... from the
-   timestamped transcript, with links to the exact second in the video.
+   timestamped transcript; click any timestamp and the player jumps to that second.
 4. **Multi-Reference Intelligence**: compares 2–10 references into "creative DNA", saved to the
    Knowledge Base.
 5. **Creative Strategy → Production Studio**: strategies read the Knowledge Base; approved

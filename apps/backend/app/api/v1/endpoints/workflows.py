@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +20,7 @@ from app.api.v1.endpoints.auth import get_current_user
 from app.api.v1.endpoints.investigations import InvestigationResponse
 from app.api.v1.endpoints.knowledge import KnowledgeEntryResponse
 from app.api.v1.endpoints.opportunities import OpportunityResponse
+from app.api.v1.endpoints.publications import PublicationResponse
 from app.api.v1.endpoints.references import ReferenceResponse
 from app.api.v1.endpoints.tests import TestResponse
 from app.db.session import get_db
@@ -33,7 +34,7 @@ from app.models.reference import Reference, ReferenceStatus
 from app.models.strategy import CreativeStrategy
 from app.models.test import Test, TestType
 from app.models.user import User
-from app.services import content_ai, research
+from app.services import content_ai, media, research, uploads
 from app.services.opportunity_discovery import OpportunityDiscoveryEngine
 from app.services.video_sources import VideoSourceError, search_youtube, video_details
 
@@ -121,16 +122,57 @@ async def capture_reference(
         raise HTTPException(status_code=422, detail=str(e))
 
 
+def _media_error(e: media.MediaError) -> HTTPException:
+    code = status.HTTP_413_REQUEST_ENTITY_TOO_LARGE if isinstance(e, media.MediaTooLarge) else 422
+    return HTTPException(status_code=code, detail=str(e))
+
+
+@router.post("/{project_id}/references/upload", response_model=ReferenceResponse, status_code=201)
+async def upload_reference(
+    project_id: uuid.UUID,
+    background: BackgroundTasks,
+    file: UploadFile = File(..., description="Video or audio file"),
+    title: Optional[str] = Form(None, max_length=500),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Add a video or audio file from your computer to the library.
+
+    The file is checked with ffprobe and gets a thumbnail; the transcript is made in
+    the background with your own OpenAI or Groq key (status INDEXING until then).
+    """
+    project = await _project(db, project_id, current_user)
+    try:
+        reference = await uploads.create_reference_upload(db, project, file, title)
+    except media.MediaError as e:
+        raise _media_error(e)
+    finally:
+        await file.close()
+    if reference.status == ReferenceStatus.INDEXING:
+        background.add_task(uploads.transcribe_reference, reference.id, current_user.id, project.language)
+    return reference
+
+
 @router.post("/{project_id}/references/{reference_id}/refresh", response_model=ReferenceResponse)
 async def refresh_reference(
     project_id: uuid.UUID,
     reference_id: uuid.UUID,
+    background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Re-fetch stats and captions for a library video."""
+    """Re-fetch stats and captions for a library video; for an upload, transcribe it again."""
     project = await _project(db, project_id, current_user)
     reference = await _in_project(db, Reference, reference_id, project_id, "Reference")
+    if reference.local_path and not reference.source_url:
+        if reference.status == ReferenceStatus.INDEXING:
+            raise HTTPException(status_code=409, detail="This file is already being transcribed")
+        reference.status = ReferenceStatus.INDEXING
+        reference.error_message = None
+        await db.commit()
+        await db.refresh(reference)
+        background.add_task(uploads.transcribe_reference, reference.id, current_user.id, project.language)
+        return reference
     try:
         return await research.refresh_reference(db, reference, project.language or "en")
     except (VideoSourceError, ValueError) as e:
@@ -464,3 +506,38 @@ async def analytics_insights(
     await db.commit()
     await db.refresh(analytics)
     return InsightsResponse(analytics=analytics, learnings_saved=saved, source=source, warning=result.get("_warning"))
+
+
+# ------------------------------------------------------------- finished cut
+
+@router.post("/{project_id}/publications/{publication_id}/video", response_model=PublicationResponse)
+async def upload_publication_video(
+    project_id: uuid.UUID,
+    publication_id: uuid.UUID,
+    file: UploadFile = File(..., description="The finished video"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Attach the finished cut to a publication so it can be watched in the app (replaces any earlier one)."""
+    project = await _project(db, project_id, current_user)
+    publication = await _in_project(db, Publication, publication_id, project_id, "Publication")
+    try:
+        return await uploads.attach_publication_video(db, project, publication, file)
+    except media.MediaError as e:
+        raise _media_error(e)
+    finally:
+        await file.close()
+
+
+@router.delete("/{project_id}/publications/{publication_id}/video", response_model=PublicationResponse)
+async def delete_publication_video(
+    project_id: uuid.UUID,
+    publication_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Remove the attached finished cut (the file is deleted)."""
+    await _project(db, project_id, current_user)
+    publication = await _in_project(db, Publication, publication_id, project_id, "Publication")
+    return await uploads.detach_publication_video(db, publication)
+

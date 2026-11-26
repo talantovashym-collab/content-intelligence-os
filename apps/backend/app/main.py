@@ -50,6 +50,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+@app.middleware("http")
+async def reject_oversized_uploads(request, call_next):
+    """Refuse uploads over MAX_UPLOAD_MB before the body is read (and spooled to disk)."""
+    if request.method in ("POST", "PUT"):
+        length = request.headers.get("content-length")
+        # Multipart framing adds a little; allow 1 MB of slack over the file limit
+        if length and length.isdigit() and int(length) > (settings.MAX_UPLOAD_MB + 1) * 1024 * 1024:
+            return JSONResponse(status_code=413, content={"detail": f"File is larger than the {settings.MAX_UPLOAD_MB} MB limit"})
+    return await call_next(request)
+
+
+# Added after the size check so CORS wraps it and a 413 still reaches the browser
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,

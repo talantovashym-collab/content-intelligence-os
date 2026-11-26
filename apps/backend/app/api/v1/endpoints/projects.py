@@ -9,6 +9,7 @@ from app.db.session import get_db
 from app.models.project import Project, ProjectStage, Platform
 from app.api.v1.endpoints.auth import get_current_user
 from app.models.user import User
+from app.services import media
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -161,3 +162,4 @@ async def delete_project(
 
     await db.delete(project)
     await db.commit()
+    media.remove_project(project_id)  # uploaded files are not in the database
