@@ -151,7 +151,7 @@ def remove(*rel_paths: Optional[str]) -> None:
 
 
 def remove_project(project_id) -> None:
-    for kind in ("references", "publications"):
+    for kind in ("references", "publications", "productions"):
         shutil.rmtree(MEDIA_ROOT / kind / str(project_id), ignore_errors=True)
 
 

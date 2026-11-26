@@ -20,6 +20,7 @@ from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal
+from app.models.production import Production
 from app.models.project import Project
 from app.models.publication import Publication
 from app.models.reference import MediaType, Reference, ReferenceStatus
@@ -146,3 +147,35 @@ async def detach_publication_video(db: AsyncSession, publication: Publication) -
     await db.refresh(publication)
     media.remove(old.get("path"), old.get("poster_path"))
     return publication
+
+
+async def set_production_video(db: AsyncSession, production: Production, stored: dict, source: str) -> Production:
+    """Make a stored video file the production's video (replacing any earlier one).
+
+    source is "upload" (a finished cut from the user's editor) or "render" (made in the app).
+    """
+    old = (production.media or {}).get("video_file") or {}
+    production.media = {**(production.media or {}), "video_file": {**stored, "source": source}}
+    await db.commit()
+    await db.refresh(production)
+    if old.get("path") != stored.get("path"):
+        media.remove(old.get("path"), old.get("poster_path"))
+    return production
+
+
+async def attach_production_video(db: AsyncSession, production: Production, upload: UploadFile) -> Production:
+    stored = await _store("productions", production.project_id, uuid.uuid4(), upload)
+    if not stored["has_video"]:
+        media.remove(stored["path"])
+        raise media.MediaError("A finished cut must be a video file")
+    return await set_production_video(db, production, stored, "upload")
+
+
+async def detach_production_video(db: AsyncSession, production: Production) -> Production:
+    meta = dict(production.media or {})
+    old = meta.pop("video_file", None) or {}
+    production.media = meta
+    await db.commit()
+    await db.refresh(production)
+    media.remove(old.get("path"), old.get("poster_path"))
+    return production

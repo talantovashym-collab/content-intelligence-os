@@ -276,7 +276,36 @@ export const productionsApi = {
     }),
   remove: (projectId: string, productionId: string) =>
     api<void>(`/productions/${projectId}/productions/${productionId}`, { method: 'DELETE' }),
+
+  /** Every watchable video in the project: productions' own videos, then publications' finished cuts. */
+  videos: (projectId: string) => api<ProductionVideo[]>(`/projects/${projectId}/production-videos`),
+  uploadVideo: (projectId: string, productionId: string, file: File, onProgress?: (fraction: number) => void) =>
+    uploadFile<ProductionVideo>(`/projects/${projectId}/productions/${productionId}/video`, file, { onProgress }),
+  removeVideo: (projectId: string, productionId: string) =>
+    api<void>(`/projects/${projectId}/productions/${productionId}/video`, { method: 'DELETE' }),
+  /** Draft video from the storyboard, rendered locally with ffmpeg (no API keys). */
+  render: (projectId: string, productionId: string, aspect: VideoAspect) =>
+    api<ProductionVideo>(`/projects/${projectId}/productions/${productionId}/render`, { method: 'POST', json: { aspect } }),
 };
+
+export type VideoAspect = '16:9' | '9:16';
+
+export interface ProductionVideo {
+  kind: 'production' | 'publication';
+  /** The production's id, or the publication's for a publication's finished cut. */
+  id: string;
+  production_id: string;
+  title: string;
+  source: 'upload' | 'render' | 'publication';
+  platform: Platform | null;
+  playback_url: string;
+  poster_url: string | null;
+  filename: string | null;
+  duration: number | null;
+  width: number | null;
+  height: number | null;
+  created_at: string | null;
+}
 
 // ---- Research → learning modules ----
 

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
+from app.models.production import Production
 from app.models.publication import Publication
 from app.models.reference import Reference
 from app.services import media
@@ -59,6 +60,25 @@ async def publication_media(
     if publication is None:
         raise HTTPException(status_code=404, detail="Publication not found")
     video = (publication.publication_metadata or {}).get("video_file") or {}
+    if variant == "poster":
+        return _serve(video.get("poster_path"), request, "image/jpeg")
+    return _serve(video.get("path"), request, video.get("content_type") or "video/mp4")
+
+
+@router.get("/productions/{production_id}/{variant}")
+async def production_media(
+    production_id: uuid.UUID,
+    variant: Literal["file", "poster"],
+    request: Request,
+    expires: int = Query(...),
+    sig: str = Query(..., max_length=64),
+    db: AsyncSession = Depends(get_db),
+):
+    media.check_signature("productions", production_id, variant, expires, sig)
+    production = await db.get(Production, production_id)
+    if production is None:
+        raise HTTPException(status_code=404, detail="Production not found")
+    video = (production.media or {}).get("video_file") or {}
     if variant == "poster":
         return _serve(video.get("poster_path"), request, "image/jpeg")
     return _serve(video.get("path"), request, video.get("content_type") or "video/mp4")
